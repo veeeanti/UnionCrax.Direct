@@ -1,31 +1,18 @@
 {
-  "name": "unioncrax-direct",
+  "name": "unioncrax-direct-tauri",
   "version": "1.0.0",
-  "description": "Standalone Electron app for managing and launching games from UnionCrax",
+  "description": "Tauri-based desktop app for managing and launching games from UnionCrax",
   "type": "module",
-  "main": "electron/main.cjs",
   "author": "UnionCrax",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Union-Crax/UnionCrax.Direct.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Union-Crax/UnionCrax.Direct/issues"
-  },
-  "homepage": "https://github.com/Union-Crax/UnionCrax.Direct#readme",
   "scripts": {
-    "setup": "node node_modules/electron/install.js",
-    "dev": "concurrently -k \"pnpm:dev:renderer\" \"pnpm:dev:electron\"",
+    "dev": "tauri dev",
+    "build": "tauri build",
     "dev:renderer": "vite --config renderer/vite.config.ts",
-    "dev:electron": "wait-on http://localhost:5173 && node scripts/run-electron.cjs electron/main.cjs",
-    "build": "pnpm -s build:renderer && pnpm -s build:electron",
     "build:renderer": "vite build --config renderer/vite.config.ts",
-    "build:electron": "node scripts/build-electron.cjs",
-    "pack": "pnpm -s build && electron-builder"
+    "tauri": "tauri"
   },
   "dependencies": {
-    "7zip-bin": "^5.0.0",
     "@radix-ui/react-checkbox": "^1.1.3",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "1.1.4",
@@ -40,10 +27,16 @@
     "@radix-ui/react-switch": "1.1.2",
     "@radix-ui/react-tabs": "1.1.2",
     "@radix-ui/react-tooltip": "1.1.6",
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-fs": "^2.2.0",
+    "@tauri-apps/plugin-http": "^2.4.3",
+    "@tauri-apps/plugin-opener": "^2.2.6",
+    "@tauri-apps/plugin-shell": "^2.2.1",
+    "@tauri-apps/plugin-store": "^2.2.0",
+    "@tauri-apps/plugin-updater": "^2.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "discord-rpc": "^4.0.1",
-
     "embla-carousel-react": "^8.5.1",
     "fuse.js": "^7.1.0",
     "geist": "^1.5.1",
@@ -55,72 +48,15 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
+    "@tauri-apps/cli": "^2.5.0",
     "@types/react": "^19.2.3",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
     "concurrently": "^9.2.1",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
-    "node-gyp": "^10.2.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",
     "typescript": "^5.9.2",
-    "vite": "^6.4.1",
-    "wait-on": "^8.0.5"
-  },
-  "build": {
-    "icon": "assets/icon.ico",
-    "appId": "xyz.unioncrax.direct",
-    "productName": "UnionCrax.Direct",
-    "npmRebuild": false,
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "Union-Crax",
-        "repo": "UnionCrax.Direct"
-      }
-    ],
-    "directories": {
-      "output": "dist-packaged",
-      "buildResources": "assets"
-    },
-    "files": [
-      "assets/**/*",
-      "electron/**/*",
-      "node_modules/**/*",
-      "renderer/dist/**/*",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/7zip-bin"
-    ],
-    "win": {
-      "icon": "assets/icon.ico",
-      "target": [
-        "nsis",
-        "portable",
-        "zip"
-      ],
-      "publisherName": "UnionCrax"
-    },
-    "nsis": {
-      "oneClick": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "UnionCrax.Direct"
-    },
-
-    "linux": {
-      "target": ["AppImage"],
-      "icon": "assets/icons"
-    }
-  },
-  "pnpm": {
-    "overrides": {
-      "react-server-dom-webpack": "19.2.3",
-      "react-server-dom-parcel": "19.2.3",
-      "react-server-dom-turbopack": "19.2.3"
-    }
+    "vite": "^6.4.1"
   }
 }

@@ -1,273 +1,95 @@
-# UnionCrax.Direct
-<img width="960" height="540" alt="main" src="https://github.com/user-attachments/assets/e6e7050a-3d7a-4f3c-9fb2-e466fd5f017b" />
+# UnionCrax.Direct — Tauri Edition
 
-
-A fast, standalone Electron desktop application for managing and launching games from the UnionCrax platform. Direct downloads with minimal overhead and full control over your gaming library.
-
-![Version](https://img.shields.io/github/v/release/Union-Crax/UnionCrax.Direct?include_prereleases&style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4?style=flat-square)
-
-## Features
-
-- **Fast Downloads**: Direct game downloads with pause/resume support
-- **Game Library**: Browse and manage your installed games
-- **Updates**: Quick check button opens Releases page
-- **Settings**: Customize download location and launch executables
-- **Search**: Quick game search with intelligent filtering
-- **History**: Track your recently played games
-- **Lightweight**: Minimal resource usage compared to web browser
-
-## System Requirements
-
-- **OS**: Windows 10 or later (64-bit)
-- **RAM**: 2GB minimum (4GB recommended)
-- **Storage**: 500MB for app, plus space for game downloads
-
-## Installation
-
-### Windows Installation Options
-
-#### Option 1: NSIS Installer (Recommended)
-1. Go to [Releases](https://github.com/Union-Crax/UnionCrax.Direct/releases)
-2. Download `UnionCrax.Direct Setup X.X.X.exe`
-3. Run the installer and choose installation directory
-4. Create desktop/Start Menu shortcuts
-5. Launch UnionCrax.Direct from Start Menu or desktop
-
-**Features**: Auto-uninstaller, Start Menu integration, customizable install location
-
-#### Option 2: Portable Executable
-1. Go to [Releases](https://github.com/Union-Crax/UnionCrax.Direct/releases)
-2. Download `UnionCrax.Direct X.X.X.exe`
-3. Run directly - no installation needed
-4. Settings and data are stored alongside the executable
-
-**Features**: No installation, run from USB drives, easily movable
-
-#### Option 3: ZIP Archive
-1. Go to [Releases](https://github.com/Union-Crax/UnionCrax.Direct/releases)
-2. Download `UnionCrax.Direct-X.X.X-win.zip`
-3. Extract to your preferred location
-4. Run `UnionCrax.Direct.exe` from the extracted folder
-
-**Features**: Full control over installation location, easy manual updates
-
-### Linux Installation
-
-Run the one-line installer (downloads the latest AppImage and creates a desktop entry):
-
-```bash
-curl -sSL https://union-crax.xyz/linux-installer.sh | bash
-```
-
-This installs the AppImage to `~/.local/share/UnionCrax.Direct` and adds a launcher in your applications menu.
-
-## Usage
-
-### Downloading Games
-1. Browse the game library
-2. Click **Download**
-3. Wait for download to complete
-4. Extraction begins automatically
-
-### Launching Games
-1. Go to **Library**
-2. Click the **Play button** on an installed game
-3. Choose the game executable if prompted
-4. Game launches directly
-
-### Managing Downloads
-1. Go to **Activity**
-2. View active, completed, and failed downloads
-3. Pause/resume/cancel downloads as needed (currenlty the host **rootz** does not support download resume)
-
-### Settings
-1. Click **Settings** (gear icon)
-2. Change download location
-3. View storage usage
-4. Check for updates
-
-## Updates
-
-UnionCrax.Direct lets you check for updates and opens the latest Releases page in your browser to download the newest installer.
-
-Manual check: Settings → **Check for Updates** (opens Releases page)
-
-## Configuration
-
-### Custom Download Location
-
-Use **Settings** → **Download Location** in the app to choose where games are installed.
-
-## Uninstall
-
-### Windows
-To uninstall UnionCrax.Direct from Windows:
-
-1. Open **Settings** → **Apps** → **Installed apps** (or **Control Panel** → **Programs and Features**)
-2. Search for **UnionCrax.Direct**
-3. Click **Uninstall** and follow the prompts
-4. The application and shortcuts will be completely removed
-
-Alternatively, if you installed the portable or ZIP version, simply delete the executable or folder.
-
-### Linux
-To uninstall UnionCrax.Direct from Linux:
-
-1. Run the installer again:
-   ```bash
-   curl -sSL https://union-crax.xyz/linux-installer.sh | bash
-   ```
-2. Select **Uninstall** when prompted
-3. The application and desktop entry will be completely removed
-
-## Troubleshooting
-
-### Linux: App icon not showing
-If the app icon doesn't appear correctly on desktop shortcuts or in the application itself:
-
-1. **Reinstall the application** to update the desktop entry and cache:
-   ```bash
-   curl -sSL https://union-crax.xyz/linux-installer.sh | bash
-   ```
-2. Select **Reinstall** when prompted
-3. Restart your desktop environment or log out and log back in
-4. The icon should now display correctly
-
-### App won't start
-- Verify Windows 10+ (64-bit)
-- Reinstall the latest version
-- Check Windows Defender isn't blocking it
-
-### Downloads fail
-- Check internet connection
-- Verify sufficient disk space
-- Check [UnionCrax Status](https://status.union-crax.xyz)
-
-### Game won't launch
-- Ensure all files are fully extracted
-- Try setting the executable manually in game details
-- Check game-specific requirements
-
-### Still having issues?
-- [Report an Issue](https://github.com/Union-Crax/UnionCrax.Direct/issues)
-- [Join Discord](https://union-crax.xyz/discord)
-
-## Development
-
-Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and development guidelines.
-
-### Quick Start (Developers)
-
-```bash
-# Clone repository
-git clone https://github.com/Union-Crax/UnionCrax.Direct.git
-cd UnionCrax.Direct
-
-# Install dependencies
-pnpm install
-pnpm run setup
-
-# Start development
-pnpm dev
-
-# Build installer
-pnpm run pack
-```
-
-For detailed development information, see [CONTRIBUTING.md](CONTRIBUTING.md).
+This is the **Tauri v2** rewrite of the UnionCrax.Direct desktop app.
+The original Electron version lives in the parent directory (`../electron/`).
 
 ## Architecture
 
-### Technology Stack
-- **Frontend**: React 18 + TypeScript + Vite
-- **Desktop**: Electron 33 + Node.js
-- **Styling**: Tailwind CSS v4
-- **Build**: electron-builder (NSIS installer for Windows)
-- **Updates**: Manual via GitHub Releases
-
-### How It Works
-1. **Main Process**: Electron handles file operations, downloads, and game launching
-2. **Renderer Process**: React UI communicates with main process via IPC
-3. **Backend**: API calls to UnionCrax for game metadata and download links
-4. **Updates**: Opens GitHub Releases for new versions
-
-## Project Structure
-
 ```
-UnionCrax.Direct/
-├── electron/          # Main Electron process
-├── renderer/          # React UI (Vite)
-│   ├── src/
-│   │   ├── app/      # Pages and routes
-│   │   ├── components/ # UI components
-│   │   ├── lib/      # Utilities and helpers
-│   │   └── context/  # React context
-│   └── public/       # Static assets
-├── scripts/          # Build and dev scripts
-├── .github/workflows/# GitHub Actions CI/CD
-└── assets/          # App icon
+tauri-app/
+├── package.json                    # Frontend deps + @tauri-apps/* packages
+├── .npmrc                          # Use npm (not pnpm) for this project
+├── .gitignore
+├── README.md                       # This file
+├── renderer/                       # React frontend (shared with Electron)
+│   ├── index.html
+│   ├── vite.config.ts              # Tauri-aware Vite config
+│   ├── tsconfig.json
+│   ├── postcss.config.cjs
+│   ├── tailwind.config.ts
+│   ├── public/                     # Fonts, icons, banner
+│   └── src/
+│       ├── main.tsx                # Calls installTauriBridge() before render
+│       ├── lib/tauri-bridge.ts     # KEY FILE: replaces Electron preload
+│       └── ...                     # All other files identical to Electron
+└── src-tauri/                      # Rust backend (replaces electron/main.cjs)
+    ├── Cargo.toml
+    ├── build.rs
+    ├── tauri.conf.json
+    ├── capabilities/default.json   # Tauri v2 plugin permissions
+    └── src/
+        ├── main.rs                 # Entry point
+        ├── lib.rs                  # App setup + command registration
+        ├── settings.rs             # Settings read/write
+        ├── logging.rs              # File-based logging
+        ├── downloads.rs            # Download management, extraction, manifests
+        ├── games.rs                # Exe discovery, launching, shortcuts
+        ├── auth.rs                 # Discord OAuth via embedded WebView
+        ├── rpc.rs                  # Discord RPC stub
+        ├── updater.rs              # GitHub release checks
+        └── tray.rs                 # System tray
 ```
 
-## Releases
+## Key differences from Electron
 
-### How Releases Work
-- Tag a commit: `git tag vX.X.X`
-- GitHub Actions automatically builds the installer
-- Release appears on [GitHub Releases](https://github.com/Union-Crax/UnionCrax.Direct/releases)
-- Users can click **Check for Updates** in the app to open the Releases page
+| Feature | Electron | Tauri |
+|---------|----------|-------|
+| Backend language | Node.js (CJS) | Rust |
+| IPC | `contextBridge` + `ipcMain.handle` | `#[tauri::command]` + `invoke()` |
+| Downloads | Chromium `will-download` event | `reqwest` streaming |
+| Extraction | `7zip-bin` npm package | System `7z`/`7za` binary |
+| Auth window | `BrowserWindow` | `WebviewWindowBuilder` |
+| Settings | JSON file via `fs` | JSON file via `std::fs` |
+| Tray | `Tray` + `Menu` | `TrayIconBuilder` |
+| Events | `win.webContents.send()` | `app.emit()` |
+| Discord RPC | `discord-rpc` npm package | Stub (extend with `discord-rpc` crate) |
 
-### Version Scheme
-We use [Semantic Versioning](https://semver.org/):
-- `MAJOR.MINOR.PATCH` (e.g., 1.2.3)
-- Major: Breaking changes
-- Minor: New features (backward compatible)
-- Patch: Bug fixes
+## Prerequisites
 
-## Security
+- [Rust](https://rustup.rs/) (stable)
+- [Node.js](https://nodejs.org/) 18+
+- On Windows: [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (usually pre-installed on Windows 10/11)
+- On Linux: `webkit2gtk-4.1`, `libssl-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`
+- 7-zip (`7z` or `7za`) on system PATH for archive extraction
 
-For security vulnerabilities, please see [SECURITY.md](SECURITY.md).
+## Development
 
-### Security Highlights
-- No hardcoded secrets or API keys
-- HTTPS-only API communication
-- Installer downloads verified via GitHub Releases
-- No telemetry or tracking
+> **Important:** Use `npm` (not `pnpm`) inside this directory. The root workspace's `pnpm-workspace.yaml` interferes with `@tauri-apps/cli`'s platform-specific binary installation.
 
-## License
+```bash
+cd tauri-app
+npm install
+npm run dev
+```
 
-This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
+This runs `tauri dev` which:
+1. Starts the Vite dev server on `http://localhost:5173`
+2. Compiles the Rust backend
+3. Opens the app window pointing at the dev server
 
-## Contributing
+## Building
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Development setup
-- Code style guidelines
-- Pull request process
-- Reporting issues
+```bash
+cd tauri-app
+npm install
+npm run build
+```
 
-## Support
+Produces installers in `src-tauri/target/release/bundle/`.
 
-- **GitHub Issues**: [Report bugs or suggest features](https://github.com/Union-Crax/UnionCrax.Direct/issues)
-- **Discord**: [Join UnionCrax Community](https://union-crax.xyz/discord)
-- **Website**: [union-crax.xyz](https://union-crax.xyz)
+## Notes
 
-## Acknowledgments
-
-Built with:
-- [Electron](https://www.electronjs.org/)
-- [React](https://react.dev/)
-- [Vite](https://vitejs.dev/)
-- [Tailwind CSS](https://tailwindcss.com/)
-- [Radix UI](https://www.radix-ui.com/)
-- [Lucide Icons](https://lucide.dev/)
-
----
-<img width="1916" height="1079" alt="image" src="https://github.com/user-attachments/assets/d9ce9369-6971-4225-b194-3018f901c1c1" />
-<img width="1916" height="1079" alt="image" src="https://github.com/user-attachments/assets/3d64ae31-4193-4326-ab06-e1dd1ec6f4c7" />
-<img width="1060" height="722" alt="image" src="https://github.com/user-attachments/assets/88ecbce7-1a03-453f-a81b-9c13c67eed6b" />
-<img width="1054" height="613" alt="image" src="https://github.com/user-attachments/assets/6611ca14-2b0f-4429-8a35-e8cfd4f518be" />
-
-
-**Made with ❤️ by the [UnionCrax](https://union-crax.xyz) Team**
+- The renderer source files are **shared** with the Electron version — only `main.tsx` differs (it calls `installTauriBridge()` first).
+- The `tauri-bridge.ts` file maps all `window.ucDownloads`, `window.ucSettings`, etc. calls to Tauri `invoke()` commands, so the rest of the renderer code works without modification.
+- Discord RPC (`rpc.rs`) is a stub — the activity is stored in memory but not sent to Discord. To enable it, integrate the [`discord-rpc`](https://crates.io/crates/discord-rpc-client) crate.
+- The `auth.rs` module opens a WebView window for Discord OAuth. Session cookies are managed by the WebView's cookie store.

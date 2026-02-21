@@ -1,5 +1,3 @@
-node_modules
-dist
-dist-packaged
-secrets.md
-.env
+node_modules/
+renderer/dist/
+src-tauri/target/
