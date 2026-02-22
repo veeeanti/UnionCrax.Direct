@@ -69,6 +69,7 @@ export function SettingsPage() {
   const [rpcHideNsfw, setRpcHideNsfw] = useState(true)
   const [rpcShowGameName, setRpcShowGameName] = useState(true)
   const [rpcShowStatus, setRpcShowStatus] = useState(true)
+  const [rpcShowDownloadStatus, setRpcShowDownloadStatus] = useState(true)
   const [rpcShowButtons, setRpcShowButtons] = useState(true)
   const [clearingData, setClearingData] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -98,8 +99,8 @@ export function SettingsPage() {
 
   useEffect(() => {
     const loadVersion = async () => {
-      const version = await window.ucUpdater?.getVersion?.()
-      if (version) setAppVersion(version)
+      const version = await window.ucUpdater?.getVersion?.() as string | undefined
+      if (typeof version === 'string' && version) setAppVersion(version)
     }
     loadVersion()
   }, [])
@@ -107,8 +108,8 @@ export function SettingsPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const diskList = (await window.ucDownloads?.listDisks?.()) || []
-        const pathResult = await window.ucDownloads?.getDownloadPath?.()
+        const diskList: DiskInfo[] = (await window.ucDownloads?.listDisks?.() as DiskInfo[] | undefined) ?? []
+        const pathResult = await window.ucDownloads?.getDownloadPath?.() as { path: string } | undefined
         const currentPath = pathResult?.path || ""
 
         setDisks(diskList)
@@ -155,9 +156,9 @@ export function SettingsPage() {
     let mounted = true
     const loadLinuxLaunchSettings = async () => {
       try {
-        const mode = await window.ucSettings?.get?.('linuxLaunchMode')
-        const winePath = await window.ucSettings?.get?.('linuxWinePath')
-        const protonPath = await window.ucSettings?.get?.('linuxProtonPath')
+        const mode = await window.ucSettings?.get?.('linuxLaunchMode') as string | undefined
+        const winePath = await window.ucSettings?.get?.('linuxWinePath') as string | undefined
+        const protonPath = await window.ucSettings?.get?.('linuxProtonPath') as string | undefined
         if (!mounted) return
         if (mode && ['auto', 'native', 'wine', 'proton'].includes(String(mode))) {
           setLinuxLaunchMode(mode as 'auto' | 'native' | 'wine' | 'proton')
@@ -194,7 +195,7 @@ export function SettingsPage() {
     let mounted = true
     const loadAdminSetting = async () => {
       try {
-        const value = await window.ucSettings?.get?.('runGamesAsAdmin')
+        const value = await window.ucSettings?.get?.('runGamesAsAdmin') as boolean | undefined
         if (mounted) {
           setRunGamesAsAdmin(value || false)
         }
@@ -219,7 +220,7 @@ export function SettingsPage() {
     let mounted = true
     const loadShortcutSetting = async () => {
       try {
-        const value = await window.ucSettings?.get?.('alwaysCreateDesktopShortcut')
+        const value = await window.ucSettings?.get?.('alwaysCreateDesktopShortcut') as boolean | undefined
         if (mounted) {
           setAlwaysCreateDesktopShortcut(value || false)
         }
@@ -244,16 +245,18 @@ export function SettingsPage() {
     let mounted = true
     const loadRpcSettings = async () => {
       try {
-        const enabled = await window.ucSettings?.get?.('discordRpcEnabled')
-        const hideNsfw = await window.ucSettings?.get?.('rpcHideNsfw')
-        const showGameName = await window.ucSettings?.get?.('rpcShowGameName')
-        const showStatus = await window.ucSettings?.get?.('rpcShowStatus')
-        const showButtons = await window.ucSettings?.get?.('rpcShowButtons')
+        const enabled = await window.ucSettings?.get?.('discordRpcEnabled') as boolean | undefined
+        const hideNsfw = await window.ucSettings?.get?.('rpcHideNsfw') as boolean | undefined
+        const showGameName = await window.ucSettings?.get?.('rpcShowGameName') as boolean | undefined
+        const showStatus = await window.ucSettings?.get?.('rpcShowStatus') as boolean | undefined
+        const showDownloadStatus = await window.ucSettings?.get?.('rpcShowDownloadStatus') as boolean | undefined
+        const showButtons = await window.ucSettings?.get?.('rpcShowButtons') as boolean | undefined
         if (!mounted) return
         setDiscordRpcEnabled(enabled !== false)
         setRpcHideNsfw(hideNsfw !== false)
         setRpcShowGameName(showGameName !== false)
         setRpcShowStatus(showStatus !== false)
+        setRpcShowDownloadStatus(showDownloadStatus !== false)
         setRpcShowButtons(showButtons !== false)
       } catch {
         // ignore
@@ -267,6 +270,7 @@ export function SettingsPage() {
         setRpcHideNsfw(true)
         setRpcShowGameName(true)
         setRpcShowStatus(true)
+        setRpcShowDownloadStatus(true)
         setRpcShowButtons(true)
         return
       }
@@ -274,6 +278,7 @@ export function SettingsPage() {
       if (data.key === 'rpcHideNsfw') setRpcHideNsfw(data.value !== false)
       if (data.key === 'rpcShowGameName') setRpcShowGameName(data.value !== false)
       if (data.key === 'rpcShowStatus') setRpcShowStatus(data.value !== false)
+      if (data.key === 'rpcShowDownloadStatus') setRpcShowDownloadStatus(data.value !== false)
       if (data.key === 'rpcShowButtons') setRpcShowButtons(data.value !== false)
     })
     return () => {
@@ -286,9 +291,9 @@ export function SettingsPage() {
     let mounted = true
     const loadDeveloperSettings = async () => {
       try {
-        const devMode = await window.ucSettings?.get?.('developerMode')
-        const baseUrl = await window.ucSettings?.get?.('customBaseUrl')
-        const verbose = await window.ucSettings?.get?.('verboseDownloadLogging')
+        const devMode = await window.ucSettings?.get?.('developerMode') as boolean | undefined
+        const baseUrl = await window.ucSettings?.get?.('customBaseUrl') as string | undefined
+        const verbose = await window.ucSettings?.get?.('verboseDownloadLogging') as boolean | undefined
         if (!mounted) return
         setDeveloperMode(devMode || false)
         const url = (baseUrl || '').trim()
@@ -341,7 +346,7 @@ export function SettingsPage() {
     let mounted = true
     const loadSkipLinkCheck = async () => {
       try {
-        const value = await window.ucSettings?.get?.('skipLinkCheck')
+        const value = await window.ucSettings?.get?.('skipLinkCheck') as boolean | undefined
         if (mounted) setSkipLinkCheck(Boolean(value))
       } catch {}
     }
@@ -407,7 +412,7 @@ export function SettingsPage() {
       }
       setUsageLoading(true)
       try {
-        const result = await window.ucDownloads.getDownloadUsage(downloadPath)
+        const result = await window.ucDownloads.getDownloadUsage(downloadPath) as { ok: boolean; sizeBytes: number; path: string } | undefined
         if (!active) return
         setUcSizeBytes(result?.ok ? result.sizeBytes : null)
       } catch (err) {
@@ -434,7 +439,7 @@ export function SettingsPage() {
     const disk = disks.find((item: DiskInfo) => item.id === diskId)
     if (!disk || !window.ucDownloads?.setDownloadPath) return
 
-    const result = await window.ucDownloads.setDownloadPath(disk.path)
+    const result = await window.ucDownloads.setDownloadPath(disk.path) as { ok: boolean; path?: string } | undefined
     if (result?.ok && result.path) {
       setDownloadPath(result.path)
     }
@@ -442,7 +447,7 @@ export function SettingsPage() {
 
   const handleAddDrive = async () => {
     if (!window.ucDownloads?.pickDownloadPath) return
-    const result = await window.ucDownloads.pickDownloadPath()
+    const result = await window.ucDownloads.pickDownloadPath() as { ok: boolean; path?: string } | undefined
     if (result?.ok && result.path) {
       setDownloadPath(result.path)
       setSelectedDiskId("custom")
@@ -453,7 +458,7 @@ export function SettingsPage() {
     setCheckingUpdate(true)
     setUpdateCheckResult(null)
     try {
-      const result = await window.ucUpdater?.checkForUpdates()
+      const result = await window.ucUpdater?.checkForUpdates?.() as { available: boolean; version?: string; message?: string; error?: string } | undefined
       if (result?.available) {
         setUpdateCheckResult(`Update available: v${result.version}`)
       } else if (result?.message) {
@@ -477,8 +482,8 @@ export function SettingsPage() {
     setCopyingDiagnostics(true)
     setDiagnosticsFeedback(null)
     try {
-      const version = await window.ucUpdater?.getVersion?.()
-      const downloadPathResult = await window.ucDownloads?.getDownloadPath?.()
+      const version = await window.ucUpdater?.getVersion?.() as string | undefined
+      const downloadPathResult = await window.ucDownloads?.getDownloadPath?.() as { path: string } | undefined
       const downloadPathValue = downloadPathResult?.path || downloadPath || 'unknown'
       const baseUrlValue = customBaseUrl || 'https://union-crax.xyz'
       const platformValue = typeof navigator !== 'undefined' ? navigator.platform : 'unknown'
@@ -515,7 +520,7 @@ export function SettingsPage() {
     setDevActionFeedback(null)
     try {
       const baseUrlValue = customBaseUrl || 'https://union-crax.xyz'
-      const result = await window.ucSettings?.runNetworkTest?.(baseUrlValue)
+      const result = await window.ucSettings?.runNetworkTest?.(baseUrlValue) as { ok: boolean; results?: Array<{ label: string; url: string; ok: boolean; status: number; elapsedMs: number; error?: string }>; error?: string } | undefined
       if (result?.ok && Array.isArray(result.results)) {
         setNetworkResults(result.results)
         setDevActionFeedback({ type: 'success', message: 'Network test completed.' })
@@ -535,7 +540,7 @@ export function SettingsPage() {
     setClearingDownloadCache(true)
     setDevActionFeedback(null)
     try {
-      const result = await window.ucDownloads?.clearDownloadCache?.()
+      const result = await window.ucDownloads?.clearDownloadCache?.() as { ok: boolean; error?: string } | undefined
       if (result?.ok) {
         setDevActionFeedback({ type: 'success', message: 'Download cache cleared.' })
       } else if (result?.error === 'downloads-active') {
@@ -554,7 +559,7 @@ export function SettingsPage() {
   const handleExportSettings = async () => {
     setDevActionFeedback(null)
     try {
-      const result = await window.ucSettings?.exportSettings?.()
+      const result = await window.ucSettings?.exportSettings?.() as { ok: boolean; data?: string; error?: string } | undefined
       if (result?.ok) {
         setDevActionFeedback({ type: 'success', message: 'Settings exported.' })
       } else if (result?.error && result.error !== 'cancelled') {
@@ -570,7 +575,7 @@ export function SettingsPage() {
   const handleImportSettings = async () => {
     setDevActionFeedback(null)
     try {
-      const result = await window.ucSettings?.importSettings?.()
+      const result = await window.ucSettings?.importSettings?.() as { ok: boolean; error?: string } | undefined
       if (result?.ok) {
         setDevActionFeedback({ type: 'success', message: 'Settings imported.' })
       } else if (result?.error && result.error !== 'cancelled') {
@@ -735,11 +740,13 @@ export function SettingsPage() {
     setLoggingIn(true)
     try {
       if (window.ucAuth?.login) {
-        const result = await window.ucAuth.login(getApiBaseUrl())
+        const result = await window.ucAuth.login(getApiBaseUrl()) as { ok: boolean; error?: string } | undefined
         if (result?.ok) {
           await apiFetch("/api/comments/session", { method: "POST" })
           await refreshAccount().catch(() => {})
           await loadAccountSummary().catch(() => {})
+          // Notify all useDiscordAccount hook instances that login succeeded
+          window.dispatchEvent(new Event("uc_discord_login"))
         }
       } else {
         window.open(apiUrl("/api/discord/connect?next=/settings"), "_blank")
@@ -831,6 +838,15 @@ export function SettingsPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rpcShowStatus: checked }),
+    }).catch(() => {})
+  }
+
+  const updateRpcShowDownloadStatus = (checked: boolean) => {
+    window.ucSettings?.set?.('rpcShowDownloadStatus', checked).catch(() => {})
+    apiFetch("/api/account/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rpcShowDownloadStatus: checked }),
     }).catch(() => {})
   }
 
@@ -1106,8 +1122,8 @@ export function SettingsPage() {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-medium">Show activity status</div>
-                    <div className="text-xs text-muted-foreground">Display what you're doing (downloading, playing, browsing)</div>
+                    <div className="text-sm font-medium">Show browsing status</div>
+                    <div className="text-xs text-muted-foreground">Display what page you're on (browsing, viewing game, settings)</div>
                   </div>
                   <button
                     onClick={() => {
@@ -1122,6 +1138,29 @@ export function SettingsPage() {
                     <span
                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                         rpcShowStatus ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Show download status</div>
+                    <div className="text-xs text-muted-foreground">Display download progress, ETA, and status (downloading, extracting, queued)</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newValue = !rpcShowDownloadStatus
+                      setRpcShowDownloadStatus(newValue)
+                      updateRpcShowDownloadStatus(newValue)
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      rpcShowDownloadStatus ? 'bg-primary' : 'bg-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        rpcShowDownloadStatus ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
                   </button>
@@ -1352,7 +1391,7 @@ export function SettingsPage() {
               </div>
               <button
                 onClick={async () => {
-                  const current = await window.ucSettings?.get?.('skipLinkCheck')
+                  const current = await window.ucSettings?.get?.('skipLinkCheck') as boolean | undefined
                   const newValue = !current
                   setSkipLinkCheck(newValue)
                   try {
@@ -1548,7 +1587,7 @@ export function SettingsPage() {
                       setClearingData(true)
                       setClearDataFeedback(null)
                       try {
-                        const result = await window.ucSettings?.clearAll?.()
+                        const result = await window.ucSettings?.clearAll?.() as { ok: boolean } | undefined
                         if (result?.ok) {
                           // Reset all local state to defaults
                           setRunGamesAsAdmin(false)
@@ -1639,7 +1678,7 @@ export function SettingsPage() {
                     setApiBaseUrl('https://union-crax.xyz')
                   } else {
                     // Enabling: apply stored custom URL if it exists, otherwise use default
-                    const storedUrl = await window.ucSettings?.get?.('customBaseUrl')
+                    const storedUrl = await window.ucSettings?.get?.('customBaseUrl') as string | undefined
                     if (storedUrl) {
                       setApiBaseUrl(storedUrl)
                       setCustomBaseUrl(storedUrl)
@@ -1854,5 +1893,3 @@ export function SettingsPage() {
     </div>
   )
 }
-
-

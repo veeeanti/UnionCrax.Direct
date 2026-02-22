@@ -36,7 +36,7 @@ export function useDiscordAccount(): DiscordAccountState {
     }
     if (!discordId && window.ucAuth?.getSession) {
       try {
-        const res = await window.ucAuth.getSession(getApiBaseUrl())
+        const res = await window.ucAuth.getSession(getApiBaseUrl()) as { ok: boolean; discordId?: string | null }
         if (res?.discordId) discordId = res.discordId
       } catch {
         // ignore
@@ -124,9 +124,17 @@ export function useDiscordAccount(): DiscordAccountState {
       setLoading(false)
     }
 
+    const handleLogin = () => {
+      void refresh()
+    }
+
     window.addEventListener("uc_discord_logout", handleLogout)
-    return () => window.removeEventListener("uc_discord_logout", handleLogout)
-  }, [])
+    window.addEventListener("uc_discord_login", handleLogin)
+    return () => {
+      window.removeEventListener("uc_discord_logout", handleLogout)
+      window.removeEventListener("uc_discord_login", handleLogin)
+    }
+  }, [refresh])
 
   return { user, loading, authenticated, refresh }
 }

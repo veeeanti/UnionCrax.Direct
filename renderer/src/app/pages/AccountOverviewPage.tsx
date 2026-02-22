@@ -100,11 +100,13 @@ export function AccountOverviewPage() {
     try {
       if (window.ucAuth?.login) {
         const result = await window.ucAuth.login(getApiBaseUrl())
-        if (result?.ok) {
+        if (result && typeof result === "object" && "ok" in result && result.ok) {
           await apiFetch("/api/comments/session", { method: "POST" })
           await refresh().catch(() => {})
           await loadSummary().catch(() => {})
           await loadRecentComments().catch(() => {})
+          // Notify all useDiscordAccount hook instances that login succeeded
+          window.dispatchEvent(new Event("uc_discord_login"))
         }
       } else {
         window.open(apiUrl("/api/discord/connect?next=/settings"), "_blank")

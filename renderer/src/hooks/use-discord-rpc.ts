@@ -142,6 +142,7 @@ export function useDiscordRpcPresence() {
   const [rpcHideNsfw, setRpcHideNsfw] = useState(true)
   const [rpcShowGameName, setRpcShowGameName] = useState(true)
   const [rpcShowStatus, setRpcShowStatus] = useState(true)
+  const [rpcShowDownloadStatus, setRpcShowDownloadStatus] = useState(true)
   const [rpcShowButtons, setRpcShowButtons] = useState(true)
   const [nameTick, setNameTick] = useState(0)
   const nameOverridesRef = useRef<Map<string, string>>(new Map())
@@ -155,12 +156,14 @@ export function useDiscordRpcPresence() {
         const hideNsfw = await window.ucSettings?.get?.("rpcHideNsfw")
         const showGameName = await window.ucSettings?.get?.("rpcShowGameName")
         const showStatus = await window.ucSettings?.get?.("rpcShowStatus")
+        const showDownloadStatus = await window.ucSettings?.get?.("rpcShowDownloadStatus")
         const showButtons = await window.ucSettings?.get?.("rpcShowButtons")
         if (!mounted) return
         setEnabled(nextEnabled !== false)
         setRpcHideNsfw(hideNsfw !== false)
         setRpcShowGameName(showGameName !== false)
         setRpcShowStatus(showStatus !== false)
+        setRpcShowDownloadStatus(showDownloadStatus !== false)
         setRpcShowButtons(showButtons !== false)
       } catch {
         // ignore
@@ -174,6 +177,7 @@ export function useDiscordRpcPresence() {
         setRpcHideNsfw(true)
         setRpcShowGameName(true)
         setRpcShowStatus(true)
+        setRpcShowDownloadStatus(true)
         setRpcShowButtons(true)
         return
       }
@@ -181,6 +185,7 @@ export function useDiscordRpcPresence() {
       if (data.key === "rpcHideNsfw") setRpcHideNsfw(data.value !== false)
       if (data.key === "rpcShowGameName") setRpcShowGameName(data.value !== false)
       if (data.key === "rpcShowStatus") setRpcShowStatus(data.value !== false)
+      if (data.key === "rpcShowDownloadStatus") setRpcShowDownloadStatus(data.value !== false)
       if (data.key === "rpcShowButtons") setRpcShowButtons(data.value !== false)
     })
     return () => {
@@ -222,11 +227,12 @@ export function useDiscordRpcPresence() {
         ? Math.min(100, Math.max(0, Math.round((activeDownload.receivedBytes / activeDownload.totalBytes) * 100)))
         : null
       
-      const details = rpcShowStatus 
+      // rpcShowDownloadStatus controls download-specific status text
+      const details = rpcShowDownloadStatus
         ? `${formatStatus(activeDownload.status)} ${title}`
         : title
       
-      const state = rpcShowStatus
+      const state = rpcShowDownloadStatus
         ? (activeDownload.status === "downloading" && activeDownload.etaSeconds
           ? `ETA ${Math.ceil(activeDownload.etaSeconds / 60)}m • ${progress ?? 0}%`
           : progress !== null ? `${progress}%` : formatStatus(activeDownload.status))
@@ -239,9 +245,9 @@ export function useDiscordRpcPresence() {
     }
     const queuedCount = downloads.filter((item) => item.status === "queued").length
     if (queuedCount > 0) {
-      return { 
-        details: rpcShowStatus ? "Queued downloads" : "Downloads", 
-        state: rpcShowStatus ? `${queuedCount} queued` : undefined
+      return {
+        details: rpcShowDownloadStatus ? "Queued downloads" : "Downloads",
+        state: rpcShowDownloadStatus ? `${queuedCount} queued` : undefined
       }
     }
     
@@ -255,8 +261,9 @@ export function useDiscordRpcPresence() {
       }
     }
     
+    // rpcShowStatus controls non-download activity status text
     return buildRouteActivity(location.pathname, downloads, nameOverridesRef.current, rpcShowGameName, rpcShowStatus, false)
-  }, [downloads, location.pathname, nameTick, rpcShowGameName, rpcShowStatus, rpcHideNsfw])
+  }, [downloads, location.pathname, nameTick, rpcShowGameName, rpcShowStatus, rpcShowDownloadStatus, rpcHideNsfw])
 
   useEffect(() => {
     if (!window.ucRpc?.setActivity) return

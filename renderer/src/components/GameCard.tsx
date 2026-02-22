@@ -1,15 +1,20 @@
-import { memo, useCallback, useEffect, useState, type MouseEvent } from "react"
+import { memo, useCallback, useEffect, useRef, useState, type MouseEvent } from "react"
 import { Link } from "react-router-dom"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, HardDrive, Download, Eye, Wifi, Flame, Play, Square } from "lucide-react"
 import { formatNumber, hasOnlineMode, pickGameExecutable, proxyImageUrl } from "@/lib/utils"
 import { useDownloads, useDownloadsSelector } from "@/context/downloads-context"
-import { apiUrl } from "@/lib/api"
+import { apiFetch } from "@/lib/api"
 import { ExePickerModal } from "@/components/ExePickerModal"
 import { AdminPromptModal } from "@/components/AdminPromptModal"
 import { DesktopShortcutModal } from "@/components/DesktopShortcutModal"
 import { gameLogger } from "@/lib/logger"
+
+type DownloadState = { isQueued: boolean; isInstalling: boolean }
+
+const downloadStateEqual = (prev: DownloadState, next: DownloadState) =>
+  prev.isQueued === next.isQueued && prev.isInstalling === next.isInstalling
 
 interface GameCardProps {
   game: {
@@ -45,7 +50,7 @@ export const GameCard = memo(function GameCard({
 }: GameCardProps) {
   const isWindows = typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent)
   const [hoveredStats, setHoveredStats] = useState<{ downloads: number; views: number } | null>(null)
-  const [isLoadingStats, setIsLoadingStats] = useState(false)
+  const isLoadingStatsRef = useRef(false)
   const isCompact = size === "compact"
 
   const genres = Array.isArray(game.genres) ? game.genres : []
@@ -70,11 +75,7 @@ export const GameCard = memo(function GameCard({
       },
       [game.appid]
     ),
-    useCallback(
-      (prev, next) =>
-        prev.isQueued === next.isQueued && prev.isInstalling === next.isInstalling,
-      []
-    )
+    downloadStateEqual
   )
   const [installedPath, setInstalledPath] = useState<string | null>(null)
   const [isInstalled, setIsInstalled] = useState(false)
@@ -119,7 +120,7 @@ export const GameCard = memo(function GameCard({
           setIsInstalled(false)
         }
         if (window.ucDownloads?.getInstalledGlobal || window.ucDownloads?.getInstalled) {
-          const manifest = await (window.ucDownloads.getInstalledGlobal?.(game.appid) || window.ucDownloads.getInstalled(game.appid))
+          const manifest: any = await (window.ucDownloads.getInstalledGlobal?.(game.appid) ?? window.ucDownloads.getInstalled?.(game.appid))
           if (!mounted) return
           if (manifest) setIsInstalled(true)
           if (manifest && manifest.metadata) {
@@ -156,7 +157,7 @@ export const GameCard = memo(function GameCard({
     const checkRunning = async () => {
       if (!window.ucDownloads?.getRunningGame) return
       try {
-        const result = await window.ucDownloads.getRunningGame(game.appid)
+        const result: any = await window.ucDownloads.getRunningGame(game.appid)
         if (mounted && result?.ok) {
           setIsRunning(result.running || false)
         }
@@ -177,13 +178,13 @@ export const GameCard = memo(function GameCard({
       return
     }
 
-    if (isLoadingStats) {
+    if (isLoadingStatsRef.current) {
       return
     }
 
-    setIsLoadingStats(true)
+    isLoadingStatsRef.current = true
     try {
-      const response = await fetch(apiUrl(`/api/stats/${encodeURIComponent(game.appid)}`))
+      const response = await apiFetch(`/api/stats/${encodeURIComponent(game.appid)}`)
       if (response.ok) {
         const data = await response.json()
         if (data.success) {
@@ -191,26 +192,26 @@ export const GameCard = memo(function GameCard({
           setHoveredStats(stats)
         }
       }
-    } catch (error) {
-      console.error(`[UC] Error fetching stats for ${game.appid}:`, error)
+    } catch (fetchError) {
+      console.error(`[UC] Error fetching stats for ${game.appid}:`, fetchError)
     } finally {
-      setIsLoadingStats(false)
+      isLoadingStatsRef.current = false
     }
-  }, [game.appid, initialStats, isLoadingStats])
+  }, [game.appid, initialStats])
 
   const { isQueued, isInstalling } = downloadState
 
   const getExeKey = (versionLabel?: string | null) =>
     versionLabel ? `gameExe:${game.appid}:${versionLabel}` : `gameExe:${game.appid}`
 
-  const getSavedExe = async (versionLabel?: string | null, allowLegacyFallback: boolean = true) => {
+  const getSavedExe = async (versionLabel?: string | null, allowLegacyFallback: boolean = true): Promise<string | null> => {
     if (!window.ucSettings?.get) return null
     try {
       const key = getExeKey(versionLabel)
-      const versioned = await window.ucSettings.get(key)
+      const versioned = (await window.ucSettings.get(key)) as string | null
       if (versioned) return versioned
       if (versionLabel && allowLegacyFallback) {
-        return await window.ucSettings.get(`gameExe:${game.appid}`)
+        return (await window.ucSettings.get(`gameExe:${game.appid}`)) as string | null
       }
       return versioned
     } catch {
@@ -229,11 +230,11 @@ export const GameCard = memo(function GameCard({
     } catch {}
   }
 
-  const getAdminPromptShown = async () => {
+  const getAdminPromptShown = async (): Promise<boolean> => {
     if (!isWindows) return true
     if (!window.ucSettings?.get) return false
     try {
-      return await window.ucSettings.get('adminPromptShown')
+      return (await window.ucSettings.get('adminPromptShown')) as boolean
     } catch {
       return false
     }
@@ -246,11 +247,11 @@ export const GameCard = memo(function GameCard({
     } catch {}
   }
 
-  const getRunAsAdminEnabled = async () => {
+  const getRunAsAdminEnabled = async (): Promise<boolean> => {
     if (!isWindows) return false
     if (!window.ucSettings?.get) return false
     try {
-      return await window.ucSettings.get('runGamesAsAdmin')
+      return (await window.ucSettings.get('runGamesAsAdmin')) as boolean
     } catch {
       return false
     }
@@ -287,7 +288,7 @@ export const GameCard = memo(function GameCard({
       try {
         await window.ucDownloads?.deleteDesktopShortcut?.(game.name)
       } catch {}
-      const result = await window.ucDownloads.createDesktopShortcut(game.name, exePath)
+      const result: any = await window.ucDownloads.createDesktopShortcut(game.name, exePath)
       if (result?.ok) {
         gameLogger.info('Desktop shortcut created', { appid: game.appid })
       } else {
@@ -321,7 +322,7 @@ export const GameCard = memo(function GameCard({
   const listGameExecutablesWithFallback = async () => {
     if (!window.ucDownloads?.listGameExecutables) return null
     const preferredLabel = await resolveCardVersionLabel()
-    let result = await window.ucDownloads.listGameExecutables(game.appid, preferredLabel || null)
+    let result: any = await window.ucDownloads.listGameExecutables(game.appid, preferredLabel || null)
     if (!result?.ok || !result.exes?.length) {
       result = await window.ucDownloads.listGameExecutables(game.appid)
     }
@@ -337,12 +338,12 @@ export const GameCard = memo(function GameCard({
   const launchGame = async (path: string, asAdmin: boolean = false) => {
     if (!window.ucDownloads) return
     const launchFn = asAdmin && isWindows
-      ? window.ucDownloads.launchGameExecutableAsAdmin 
+      ? window.ucDownloads.launchGameExecutableAsAdmin
       : window.ucDownloads.launchGameExecutable
     
     if (!launchFn) return
-    const showGameName = await window.ucSettings?.get?.('rpcShowGameName') ?? true
-    const res = await launchFn(game.appid, path, game.name, showGameName)
+    const showGameName = ((await window.ucSettings?.get?.('rpcShowGameName')) ?? true) as boolean
+    const res: any = await launchFn(game.appid, path, game.name, showGameName)
     if (res && res.ok) {
       const preferredLabel = await resolveCardVersionLabel()
       await setSavedExe(path, preferredLabel)
@@ -407,7 +408,7 @@ export const GameCard = memo(function GameCard({
     // If game is running, stop it
     if (isRunning && window.ucDownloads?.quitGameExecutable) {
       try {
-        const result = await window.ucDownloads.quitGameExecutable(game.appid)
+        const result: any = await window.ucDownloads.quitGameExecutable(game.appid)
         if (result?.ok && result.stopped) {
           setIsRunning(false)
         }

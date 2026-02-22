@@ -3,11 +3,10 @@
 /// bundled binary or system PATH) for archive extraction.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use bytes::Bytes;
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -16,7 +15,6 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncWriteExt;
 
-use crate::logging::uc_log;
 use crate::settings::read_settings;
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -459,6 +457,7 @@ async fn compute_file_checksum(path: &Path) -> Option<String> {
     Some(hex::encode(hasher.finalize()))
 }
 
+#[allow(dead_code)]
 fn find_installed_folder_by_appid(app: &AppHandle, appid: &str) -> Option<PathBuf> {
     for root in list_download_roots(app) {
         let installed_root = root.join(INSTALLED_DIR);
@@ -614,12 +613,12 @@ fn resolve_7zip_binary() -> Option<String> {
 }
 
 async fn run_7z_extract(
-    app: &AppHandle,
+    _app: &AppHandle,
     archive_path: &Path,
     dest_dir: &Path,
-    download_id: &str,
-    total_bytes: u64,
-    appid: Option<&str>,
+    _download_id: &str,
+    _total_bytes: u64,
+    _appid: Option<&str>,
 ) -> anyhow::Result<Vec<PathBuf>> {
     let cmd = resolve_7zip_binary()
         .context("7zip binary not found. Please install p7zip (7z) on this system.")?;
@@ -1179,7 +1178,7 @@ pub async fn download_start(app: AppHandle, payload: DownloadPayload) -> Value {
 }
 
 #[tauri::command]
-pub fn download_cancel(app: AppHandle, download_id: String) -> Value {
+pub fn download_cancel(_app: AppHandle, download_id: String) -> Value {
     CANCELLED_IDS.lock().unwrap().insert(download_id.clone());
 
     // Mark active download as cancelled
@@ -1871,7 +1870,7 @@ pub async fn pick_image(app: AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn network_test(app: AppHandle, base_url: Option<String>) -> Value {
+pub async fn network_test(_app: AppHandle, base_url: Option<String>) -> Value {
     let origin = base_url.as_deref().unwrap_or("https://union-crax.xyz");
     let targets = vec![
         ("API base", origin.to_string()),

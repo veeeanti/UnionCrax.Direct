@@ -18,7 +18,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
-import { apiUrl } from "@/lib/api"
+import { apiFetch } from "@/lib/api"
 import { formatNumber, generateErrorCode, ErrorTypes } from "@/lib/utils"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { Hammer, SlidersHorizontal, Wifi, EyeOff, ArrowRight, Server, Search } from "lucide-react"
@@ -214,7 +214,7 @@ export function LauncherPage() {
         if (recentCache) return
       }
 
-      const response = await fetch(apiUrl("/api/downloads/all"))
+      const response = await apiFetch("/api/downloads/all")
 
       if (!response.ok) {
         throw new Error(`Stats API route failed: ${response.status}`)
@@ -239,7 +239,7 @@ export function LauncherPage() {
       return []
     }
 
-    const response = await fetch(apiUrl("/api/games"))
+    const response = await apiFetch("/api/games")
 
     if (!response.ok) {
       throw new GamesFetchError(`API route failed: ${response.status}`, response.status)

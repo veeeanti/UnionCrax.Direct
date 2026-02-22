@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { GameCard } from "@/components/GameCard"
 import { GameComments } from "@/components/GameComments"
 import { useDownloads } from "@/context/downloads-context"
-import { apiUrl, apiFetch } from "@/lib/api"
+import { apiFetch } from "@/lib/api"
 import { getPreferredDownloadHost, setPreferredDownloadHost, requestDownloadToken, fetchGameVersionsMeta, type PreferredDownloadHost, type DownloadConfig, type GameVersion } from "@/lib/downloads"
 import { formatNumber, hasOnlineMode, pickGameExecutable, proxyImageUrl } from "@/lib/utils"
 import type { Game } from "@/lib/types"
@@ -30,7 +30,7 @@ import {
   Settings,
   Square,
   Trash2,
-  Unlink2,
+  Unlink,
   User,
   Wifi,
   X,
@@ -117,7 +117,7 @@ export function GameDetailPage() {
         const isExternalId = appid.startsWith('external-')
 
         if (!isExternalId) {
-          const response = await fetch(apiUrl(`/api/games/${encodeURIComponent(appid)}`))
+          const response = await apiFetch(`/api/games/${encodeURIComponent(appid)}`)
           if (!response.ok) {
             throw new Error(`Unable to load game (${response.status})`)
           }
@@ -135,7 +135,7 @@ export function GameDetailPage() {
         // Try fallback: ask main process for installed manifest
         try {
           if (window.ucDownloads?.getInstalledGlobal || window.ucDownloads?.getInstalled) {
-            const manifest = await (window.ucDownloads.getInstalledGlobal?.(appid) || window.ucDownloads.getInstalled(appid))
+            const manifest: any = await (window.ucDownloads.getInstalledGlobal?.(appid) ?? window.ucDownloads.getInstalled?.(appid))
             if (manifest && manifest.metadata) {
               // prefer a locally stored image when offline
               const meta = manifest.metadata
@@ -213,12 +213,12 @@ export function GameDetailPage() {
 
     const fetchCounts = async () => {
       try {
-        const downloadsRes = await fetch(apiUrl(`/api/downloads/count/${encodeURIComponent(appid)}`))
+        const downloadsRes = await apiFetch(`/api/downloads/count/${encodeURIComponent(appid)}`)
         if (downloadsRes.ok) {
           const data = await downloadsRes.json()
           if (data.success) setDownloadCount(data.downloads || 0)
         }
-        const viewsRes = await fetch(apiUrl(`/api/views/${encodeURIComponent(appid)}`))
+        const viewsRes = await apiFetch(`/api/views/${encodeURIComponent(appid)}`)
         if (viewsRes.ok) {
           const data = await viewsRes.json()
           if (data.success) setViewCount(data.viewCount || 0)
@@ -233,7 +233,7 @@ export function GameDetailPage() {
 
   useEffect(() => {
     if (!appid) return
-    fetch(apiUrl(`/api/views/${encodeURIComponent(appid)}`), {
+    apiFetch(`/api/views/${encodeURIComponent(appid)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     })
@@ -325,7 +325,7 @@ export function GameDetailPage() {
     let mounted = true
     const refresh = async () => {
       try {
-        const res = await window.ucDownloads?.getRunningGame?.(appid)
+        const res: any = await window.ucDownloads?.getRunningGame?.(appid)
         if (!mounted) return
         setIsGameRunning(Boolean(res && res.ok && res.running))
       } catch {
@@ -456,7 +456,7 @@ export function GameDetailPage() {
         return
       }
       
-      const result = await window.ucDownloads.listGameExecutables(game.appid, selectedVersionLabel)
+      const result: any = await window.ucDownloads.listGameExecutables(game.appid, selectedVersionLabel)
       const exes = result?.exes || []
       const folder = result?.folder || null
       const { pick, confident } = pickGameExecutable(exes, game.name, game.source, folder)
@@ -613,12 +613,12 @@ export function GameDetailPage() {
     versionKey?: string | null,
     versionLabel?: string | null,
     allowLegacyFallback: boolean = true
-  ) => {
+  ): Promise<string | null> => {
     if (!window.ucSettings?.get) return null
     try {
       const keys = getExeKeys(versionKey, versionLabel, allowLegacyFallback)
       for (const key of keys) {
-        const value = await window.ucSettings.get(key)
+        const value = (await window.ucSettings.get(key)) as string | null
         if (value) return value
       }
       return null
@@ -647,11 +647,11 @@ export function GameDetailPage() {
     } catch {}
   }
 
-  const getAdminPromptShown = async () => {
+  const getAdminPromptShown = async (): Promise<boolean> => {
     if (!isWindows) return true
     if (!window.ucSettings?.get) return false
     try {
-      return await window.ucSettings.get('adminPromptShown')
+      return (await window.ucSettings.get('adminPromptShown')) as boolean
     } catch {
       return false
     }
@@ -664,20 +664,20 @@ export function GameDetailPage() {
     } catch {}
   }
 
-  const getRunAsAdminEnabled = async () => {
+  const getRunAsAdminEnabled = async (): Promise<boolean> => {
     if (!isWindows) return false
     if (!window.ucSettings?.get) return false
     try {
-      return await window.ucSettings.get('runGamesAsAdmin')
+      return (await window.ucSettings.get('runGamesAsAdmin')) as boolean
     } catch {
       return false
     }
   }
 
-  const getShortcutAskedForGame = async () => {
+  const getShortcutAskedForGame = async (): Promise<boolean> => {
     if (!window.ucSettings?.get || !game) return false
     try {
-      return await window.ucSettings.get(`shortcutAsked:${game.appid}`)
+      return (await window.ucSettings.get(`shortcutAsked:${game.appid}`)) as boolean
     } catch {
       return false
     }
@@ -690,10 +690,10 @@ export function GameDetailPage() {
     } catch {}
   }
 
-  const getAlwaysCreateShortcut = async () => {
+  const getAlwaysCreateShortcut = async (): Promise<boolean> => {
     if (!window.ucSettings?.get) return false
     try {
-      return await window.ucSettings.get('alwaysCreateDesktopShortcut')
+      return (await window.ucSettings.get('alwaysCreateDesktopShortcut')) as boolean
     } catch {
       return false
     }
@@ -712,7 +712,7 @@ export function GameDetailPage() {
       try {
         await window.ucDownloads?.deleteDesktopShortcut?.(game.name)
       } catch {}
-      const result = await window.ucDownloads.createDesktopShortcut(game.name, exePath)
+      const result: any = await window.ucDownloads.createDesktopShortcut(game.name, exePath)
       if (result?.ok) {
         gameLogger.info('Desktop shortcut created', { appid: game.appid })
       } else {
@@ -743,7 +743,7 @@ export function GameDetailPage() {
   const openExecutablePicker = async () => {
     if (!game || !window.ucDownloads?.listGameExecutables) return
     try {
-      const [result, savedExe] = await Promise.all([
+      const [result, savedExe]: [any, string | null] = await Promise.all([
         window.ucDownloads.listGameExecutables(game.appid, selectedVersionLabel),
         getSavedExe(selectedVersionKey, selectedVersionLabel, installedVersionLabels.length <= 1),
       ])
@@ -774,7 +774,7 @@ export function GameDetailPage() {
       let folder: string | null = null
       let discoveredExePath: string | null = null
       if (window.ucDownloads?.listGameExecutables) {
-        const result = await window.ucDownloads.listGameExecutables(game.appid, selectedVersionLabel)
+        const result: any = await window.ucDownloads.listGameExecutables(game.appid, selectedVersionLabel)
         folder = result?.folder || null
         if (result?.exes?.[0]?.path) {
           discoveredExePath = result.exes[0].path
@@ -790,8 +790,8 @@ export function GameDetailPage() {
       } else if (!folder && candidate) {
         folder = candidate
       } else if (folder && window.ucDownloads?.findGameSubfolder) {
-        const subfolder = await window.ucDownloads.findGameSubfolder(folder)
-        if (subfolder) {
+        const subfolder = await window.ucDownloads.findGameSubfolder(folder) as string | null
+        if (typeof subfolder === 'string') {
           folder = subfolder
         }
       }
@@ -813,7 +813,7 @@ export function GameDetailPage() {
       let folder: string | null = null
 
       if (!targetExe && window.ucDownloads?.listGameExecutables) {
-        const result = await window.ucDownloads.listGameExecutables(game.appid, selectedVersionLabel)
+        const result: any = await window.ucDownloads.listGameExecutables(game.appid, selectedVersionLabel)
         exes = result?.exes || []
         folder = result?.folder || null
 
@@ -884,12 +884,12 @@ export function GameDetailPage() {
   const launchGame = async (path: string, asAdmin: boolean = false) => {
     if (!window.ucDownloads) return
     const launchFn = asAdmin && isWindows
-      ? window.ucDownloads.launchGameExecutableAsAdmin 
+      ? window.ucDownloads.launchGameExecutableAsAdmin
       : window.ucDownloads.launchGameExecutable
     
     if (!launchFn) return
-    const showGameName = await window.ucSettings?.get?.('rpcShowGameName') ?? true
-    const res = await launchFn(game.appid, path, game.name, showGameName)
+    const showGameName = ((await window.ucSettings?.get?.('rpcShowGameName')) ?? true) as boolean
+    const res: any = await launchFn(game.appid, path, game.name, showGameName)
     if (res && res.ok) {
       await setSavedExe(path, selectedVersionKey, selectedVersionLabel, installedVersionLabels.length <= 1)
       setExePickerOpen(false)
@@ -1256,7 +1256,7 @@ export function GameDetailPage() {
                         >
                           {installedManifest?.isExternal ? (
                             <>
-                              <Unlink2 className="mr-2 h-4 w-4" />
+                              <Unlink className="mr-2 h-4 w-4" />
                               Unlink Game
                             </>
                           ) : (

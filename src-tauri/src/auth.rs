@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use once_cell::sync::Lazy;
-use tauri::{AppHandle, Listener, WebviewWindowBuilder, WebviewUrl};
+use tauri::{AppHandle, Listener, Manager, WebviewWindowBuilder, WebviewUrl};
 
 const DEFAULT_BASE_URL: &str = "https://union-crax.xyz";
 
@@ -63,6 +63,11 @@ pub async fn auth_login(app: AppHandle, base_url: Option<String>) -> Value {
     let result: Arc<Mutex<Option<bool>>> = Arc::new(Mutex::new(None));
     let result_clone = result.clone();
 
+    // Detect auth result from URL navigation (e.g. redirect back with ?discord_connected=true)
+    // on_navigation must be set on the builder in Tauri v2, not on the window after build.
+    let result_nav = result_clone.clone();
+    let origin_nav = origin.clone();
+    let app_nav = app.clone();
     let auth_window = WebviewWindowBuilder::new(
         &app,
         "auth",
@@ -71,6 +76,36 @@ pub async fn auth_login(app: AppHandle, base_url: Option<String>) -> Value {
     .title("Discord Login")
     .inner_size(520.0, 720.0)
     .resizable(false)
+    .on_navigation(move |url| {
+        if let Some(ok) = parse_auth_result(url.as_str()) {
+            let mut r = result_nav.lock().unwrap();
+            if r.is_none() {
+                *r = Some(ok);
+            }
+            // When auth succeeds, inject a script to extract cookies from the WebView
+            // and store them in the Rust COOKIE_STORE so auth_fetch can use them.
+            if ok {
+                let origin_clone = origin_nav.clone();
+                let app_clone = app_nav.clone();
+                // Use a small delay to let the page finish setting cookies before reading them
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if let Some(win) = app_clone.get_webview_window("auth") {
+                        let script = r#"
+                            (function() {
+                                var cookies = document.cookie;
+                                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                                    window.__TAURI_INTERNALS__.invoke('auth_store_cookies', { domain: '__ORIGIN__', cookies: cookies });
+                                }
+                            })();
+                        "#.replace("__ORIGIN__", &origin_clone);
+                        let _ = win.eval(script);
+                    }
+                });
+            }
+        }
+        true // allow navigation
+    })
     .build();
 
     match auth_window {
@@ -104,6 +139,10 @@ pub async fn auth_login(app: AppHandle, base_url: Option<String>) -> Value {
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                 let r = result.lock().unwrap().clone();
                 if let Some(ok) = r {
+                    // Give the cookie injection script a moment to run before closing
+                    if ok {
+                        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                    }
                     let _ = win.close();
                     if ok {
                         return serde_json::json!({ "ok": true });

@@ -1,13 +1,11 @@
-import { apiLogger } from "./logger"
-
 const DEFAULT_BASE_URL = "https://union-crax.xyz"
 
 let currentBaseUrl = DEFAULT_BASE_URL
 
 // Load custom base URL from settings on initialization
 if (typeof window !== 'undefined' && window.ucSettings?.get) {
-  window.ucSettings.get('customBaseUrl').then((url: string | undefined) => {
-    if (url && url.trim()) {
+  window.ucSettings.get('customBaseUrl').then((url: unknown) => {
+    if (url && typeof url === 'string' && url.trim()) {
       currentBaseUrl = url.trim()
     }
   }).catch(() => {
@@ -37,14 +35,14 @@ export async function apiFetch(path: string, init?: RequestInit) {
 
   const canUseAuthFetch = typeof window !== "undefined" && Boolean(window.ucAuth?.fetch)
   if (canUseAuthFetch) {
-    let body: string | null | undefined = nextInit.body as any
+    let body: string | null | undefined = nextInit.body as string | null | undefined
     let headers = new Headers(nextInit.headers || {})
 
-    if (body instanceof URLSearchParams) {
+    if (nextInit.body instanceof URLSearchParams) {
       if (!headers.has("content-type")) {
         headers.set("content-type", "application/x-www-form-urlencoded;charset=UTF-8")
       }
-      body = body.toString()
+      body = nextInit.body.toString()
     }
 
     const hasSerializableBody = body == null || typeof body === "string"
@@ -55,7 +53,13 @@ export async function apiFetch(path: string, init?: RequestInit) {
         body: body ?? null,
       }
 
-      const result = await window.ucAuth!.fetch(getApiBaseUrl(), path, serializedInit)
+      const result = await window.ucAuth!.fetch(getApiBaseUrl(), path, serializedInit) as {
+        ok: boolean
+        status: number
+        statusText: string
+        headers: [string, string][]
+        body: string
+      }
       const bytes = result.body ? base64ToUint8Array(result.body) : new Uint8Array()
       // Response status must be in [200, 599]. A status of 0 means a network
       // error (DNS failure, server unreachable, CORS block, etc.).  Map it to
@@ -63,7 +67,23 @@ export async function apiFetch(path: string, init?: RequestInit) {
       // runs instead of throwing an uncaught RangeError.
       const rawStatus = result.status || 0
       const safeStatus = rawStatus >= 200 && rawStatus <= 599 ? rawStatus : 503
-      return new Response(bytes, {
+
+      // If auth_fetch returns 401 (Unauthorized), the Rust cookie store may not have
+      // the session cookie yet (e.g. right after Discord OAuth login). Fall through to
+      // native fetch which uses the WebView's own cookie jar.
+      if (safeStatus === 401) {
+        try {
+          const nativeResponse = await fetch(apiUrl(path), nextInit)
+          // If native fetch succeeds with auth, return it so the WebView's session is used
+          if (nativeResponse.ok || nativeResponse.status !== 401) {
+            return nativeResponse
+          }
+        } catch {
+          // native fetch failed too — return the original 401 response
+        }
+      }
+
+      return new Response(bytes.buffer as ArrayBuffer, {
         status: safeStatus,
         statusText: result.statusText || (safeStatus !== rawStatus ? "Network Error" : ""),
         headers: new Headers(result.headers || []),

@@ -109,12 +109,20 @@ export function proxyImageUrl(imageUrl: string): string {
     }
   } catch {}
 
+  // In Tauri context, the WebView can fetch external URLs directly without a server-side proxy.
+  // The proxy endpoint requires server-side session cookies which are not available in <img> tags.
+  const isTauri = typeof window !== 'undefined' && (
+    Boolean((window as any).__TAURI__) || Boolean((window as any).__TAURI_INTERNALS__)
+  )
+  if (isTauri) {
+    return imageUrl
+  }
+
   try {
     const encodedUrl = encodeURIComponent(imageUrl)
     return apiUrl(`/api/images/${encodedUrl}`)
-  } catch (error) {
+  } catch {
     // Error encoding image URL - silently fail
-    return imageUrl
     return imageUrl
   }
 }

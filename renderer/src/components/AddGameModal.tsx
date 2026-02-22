@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { FolderOpen, Search, Loader2, ImageIcon, Plus, CheckCircle2 } from "lucide-react"
-import { apiUrl } from "@/lib/api"
+import { apiFetch } from "@/lib/api"
 import { proxyImageUrl } from "@/lib/utils"
 
 interface MatchedGame {
@@ -59,6 +59,15 @@ export function AddGameModal({ open, onOpenChange }: AddGameModalProps) {
     }
   }, [open])
 
+  const selectMatch = useCallback((game: MatchedGame) => {
+    setMatchedGame(game)
+    setGameName(game.name)
+    setShowResults(false)
+    if (game.image) {
+      setImagePreview(proxyImageUrl(game.image))
+    }
+  }, [])
+
   // Search UC catalog when name changes
   const searchUCCatalog = useCallback(async (name: string) => {
     if (!name || name.trim().length < 2) {
@@ -71,7 +80,7 @@ export function AddGameModal({ open, onOpenChange }: AddGameModalProps) {
 
     setSearching(true)
     try {
-      const response = await fetch(apiUrl(`/api/games/suggestions?q=${encodeURIComponent(name.trim())}&limit=5&nsfw=true`))
+      const response = await apiFetch(`/api/games/suggestions?q=${encodeURIComponent(name.trim())}&limit=5&nsfw=true`)
       if (!response.ok) throw new Error("Search failed")
       const data = await response.json()
 
@@ -109,7 +118,7 @@ export function AddGameModal({ open, onOpenChange }: AddGameModalProps) {
     } finally {
       setSearching(false)
     }
-  }, [])
+  }, [selectMatch])
 
   // Debounced search
   useEffect(() => {
@@ -127,20 +136,11 @@ export function AddGameModal({ open, onOpenChange }: AddGameModalProps) {
     }
   }, [gameName, searchUCCatalog])
 
-  const selectMatch = (game: MatchedGame) => {
-    setMatchedGame(game)
-    setGameName(game.name)
-    setShowResults(false)
-    if (game.image) {
-      setImagePreview(proxyImageUrl(game.image))
-    }
-  }
-
   const handlePickFolder = async () => {
     try {
       const result = await window.ucDownloads?.pickExternalGameFolder?.()
       if (result) {
-        setGamePath(result)
+        setGamePath(result as string)
       }
     } catch {
       // ignore
@@ -184,7 +184,7 @@ export function AddGameModal({ open, onOpenChange }: AddGameModalProps) {
       }
 
       // Use the IPC handler to register the game
-      const result = await window.ucDownloads?.addExternalGame?.(appid, metadata, gamePath.trim())
+      const result: any = await window.ucDownloads?.addExternalGame?.(appid, metadata, gamePath.trim())
 
       if (result?.ok) {
         setSuccess(true)
