@@ -574,23 +574,76 @@ fn list_disks_inner() -> Vec<DiskInfo> {
 }
 
 #[cfg(not(target_os = "windows"))]
+fn statvfs_space(path: &Path) -> (u64, u64) {
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        let c_path = match CString::new(path.to_string_lossy().as_bytes()) {
+            Ok(p) => p,
+            Err(_) => return (0, 0),
+        };
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        let ret = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
+        if ret == 0 {
+            let block_size = stat.f_frsize as u64;
+            let total = stat.f_blocks as u64 * block_size;
+            let free = stat.f_bavail as u64 * block_size;
+            return (total, free);
+        }
+    }
+    (0, 0)
+}
+
+#[cfg(not(target_os = "windows"))]
 fn list_disks_inner() -> Vec<DiskInfo> {
     let mut disks = Vec::new();
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-    let candidates = vec![home.clone(), PathBuf::from("/home"), PathBuf::from("/mnt"), PathBuf::from("/media")];
-    for root in candidates {
+
+    // Always include home directory
+    let (home_total, home_free) = statvfs_space(&home);
+    disks.push(DiskInfo {
+        id: "home".to_string(),
+        name: "Home".to_string(),
+        path: home.to_string_lossy().to_string(),
+        total_bytes: home_total,
+        free_bytes: home_free,
+    });
+
+    // Include common mount points if they exist and differ from home
+    let extra_candidates = vec![
+        PathBuf::from("/mnt"),
+        PathBuf::from("/media"),
+        PathBuf::from("/run/media"),
+    ];
+    for root in extra_candidates {
         if !root.exists() {
             continue;
         }
-        let id = if root == home { "home".to_string() } else { root.to_string_lossy().replace('/', "_") };
-        let name = if root == home { "Home".to_string() } else { root.to_string_lossy().to_string() };
-        disks.push(DiskInfo {
-            id,
-            name,
-            path: root.to_string_lossy().to_string(),
-            total_bytes: 0,
-            free_bytes: 0,
-        });
+        // Enumerate subdirectories (e.g. /mnt/sda1, /media/user/usb)
+        if let Ok(entries) = std::fs::read_dir(&root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                // Skip if same filesystem as home
+                let (total, free) = statvfs_space(&path);
+                if total == 0 {
+                    continue;
+                }
+                let id = path.to_string_lossy().replace('/', "_").trim_start_matches('_').to_string();
+                let name = path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+                disks.push(DiskInfo {
+                    id,
+                    name,
+                    path: path.to_string_lossy().to_string(),
+                    total_bytes: total,
+                    free_bytes: free,
+                });
+            }
+        }
     }
     disks
 }
@@ -640,6 +693,30 @@ async fn run_7z_extract(
 
     let after: HashSet<PathBuf> = snapshot_files(dest_dir);
     let extracted: Vec<PathBuf> = after.difference(&before).cloned().collect();
+
+    // On Linux/Unix, set execute permissions for known executable file types
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let executable_exts = ["appimage", "sh", "run", "bin", "x86_64", "x86", "exe"];
+        for path in &extracted {
+            let lower = path.to_string_lossy().to_lowercase();
+            let is_exec_ext = executable_exts.iter().any(|ext| lower.ends_with(&format!(".{}", ext)));
+            // Also mark files with no extension that are in the root of the extracted dir
+            let no_ext = path.extension().is_none() && path.is_file();
+            if is_exec_ext || no_ext {
+                if let Ok(meta) = std::fs::metadata(path) {
+                    let mut perms = meta.permissions();
+                    let mode = perms.mode();
+                    // Add execute bit for owner, group, others (matching read bits)
+                    let new_mode = mode | ((mode & 0o444) >> 2);
+                    perms.set_mode(new_mode);
+                    let _ = std::fs::set_permissions(path, perms);
+                }
+            }
+        }
+    }
+
     Ok(extracted)
 }
 

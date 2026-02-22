@@ -95,8 +95,8 @@ export const ErrorTypes = {
 
 export function proxyImageUrl(imageUrl: string): string {
   if (!imageUrl) return imageUrl
-  // already a relative path or data/blob URL served by the app
-  if (imageUrl.startsWith("/") || imageUrl.startsWith("data:") || imageUrl.startsWith("blob:") || imageUrl.startsWith("file://")) {
+  // already a data/blob URL or file:// URL
+  if (imageUrl.startsWith("data:") || imageUrl.startsWith("blob:") || imageUrl.startsWith("file://")) {
     return imageUrl
   }
 
@@ -108,6 +108,19 @@ export function proxyImageUrl(imageUrl: string): string {
       return `file:///${encodeURI(normalized)}`
     }
   } catch {}
+
+  // detect absolute Unix/Linux filesystem paths (e.g. /home/user/...) and convert to file:// URL
+  // distinguish from web-relative paths like /banner.png by checking for a second path separator
+  try {
+    if (imageUrl.startsWith('/') && imageUrl.indexOf('/', 1) !== -1) {
+      return `file://${encodeURI(imageUrl)}`
+    }
+  } catch {}
+
+  // web-relative path served by the app (e.g. /banner.png)
+  if (imageUrl.startsWith("/")) {
+    return imageUrl
+  }
 
   // In Tauri context, the WebView can fetch external URLs directly without a server-side proxy.
   // The proxy endpoint requires server-side session cookies which are not available in <img> tags.

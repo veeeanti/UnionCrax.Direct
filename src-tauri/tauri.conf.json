@@ -39,9 +39,13 @@
     "active": true,
     "targets": "all",
     "icon": [
+      "../assets/icons/16x16.png",
       "../assets/icons/32x32.png",
+      "../assets/icons/48x48.png",
+      "../assets/icons/64x64.png",
       "../assets/icons/128x128.png",
       "../assets/icons/256x256.png",
+      "../assets/icons/512x512.png",
       "../assets/icon.ico"
     ],
     "resources": {
@@ -60,10 +64,14 @@
     },
     "linux": {
       "deb": {
-        "depends": []
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ]
       },
       "appimage": {
-        "bundleMediaFramework": false
+        "bundleMediaFramework": true
       }
     },
     "publisher": "UnionCrax"
