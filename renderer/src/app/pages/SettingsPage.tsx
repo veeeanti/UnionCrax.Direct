@@ -14,6 +14,7 @@ import {
   setPreferredDownloadHost,
 } from "@/lib/downloads"
 import { LogViewer } from "@/components/LogViewer"
+import { ControllerSettingsPanel } from "@/components/ControllerSettingsPanel"
 import { useDiscordAccount } from "@/hooks/use-discord-account"
 import {
   SETTINGS_KEYS,
@@ -2180,8 +2181,11 @@ export function SettingsPage() {
                   <button
                     type="button"
                     onClick={async () => {
-                      setVrSteamVrPath(vrDetected.dir!)
-                      await window.ucSettings?.set?.('vrSteamVrPath', vrDetected.dir).catch(() => {})
+                      const steamVrPath = vrDetected.dir
+                      if (steamVrPath) {
+                        setVrSteamVrPath(steamVrPath)
+                        await window.ucSettings?.set?.('vrSteamVrPath', steamVrPath).catch(() => {})
+                      }
                     }}
                     className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
                   >
@@ -2213,8 +2217,11 @@ export function SettingsPage() {
                   <button
                     type="button"
                     onClick={async () => {
-                      setVrXrRuntimeJson(vrOpenXrDetected.path)
-                      await window.ucSettings?.set?.('vrXrRuntimeJson', vrOpenXrDetected.path).catch(() => {})
+                      const runtimePath = vrOpenXrDetected.path
+                      if (runtimePath) {
+                        setVrXrRuntimeJson(runtimePath)
+                        await window.ucSettings?.set?.('vrXrRuntimeJson', runtimePath).catch(() => {})
+                      }
                     }}
                     className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
                   >
@@ -2261,6 +2268,8 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      <ControllerSettingsPanel />
 
       <Card className="border-destructive/40">
         <CardContent className="p-6 space-y-4">

@@ -232,6 +232,110 @@ declare global {
       onHide: (callback: (data: {}) => void) => () => void
       onStateChanged: (callback: (data: { visible: boolean; appid: string | null }) => void) => () => void
     }
+    ucController?: {
+      // Get list of connected controllers
+      listControllers: () => Promise<{
+        ok: boolean
+        controllers: Array<{
+          index: number
+          id: string
+          type: string
+          model: string
+          name: string
+          hasCustomBinds: boolean
+        }>
+      }>
+      
+      // Get current state of a specific controller
+      getControllerState: (index: number) => Promise<{
+        ok: boolean
+        state?: {
+          connected: boolean
+          index: number
+          id: string
+          timestamp: number
+          buttons: Record<string, { pressed: boolean; value: number; touched: boolean }>
+          axes: Record<string, number>
+        }
+        type?: string
+        model?: string
+        name?: string
+        customBinds?: Record<string, string>
+        error?: string
+      }>
+      
+      // Set custom binds for a specific controller
+      setControllerBinds: (controllerId: string, binds: Record<string, string>) => Promise<{
+        ok: boolean
+        binds?: Record<string, string>
+        error?: string
+      }>
+      
+      // Set custom binds for a controller type
+      setTypeBinds: (controllerType: string, binds: Record<string, string>) => Promise<{
+        ok: boolean
+        binds?: Record<string, string>
+        error?: string
+      }>
+      
+      // Get custom binds for a controller
+      getControllerBinds: (controllerId: string) => Promise<{
+        ok: boolean
+        binds: Record<string, string> | null
+      }>
+      
+      // Reset binds to default
+      resetControllerBinds: (controllerId: string) => Promise<{ ok: boolean; error?: string }>
+      
+      // Set stick deadzone (0-1)
+      setDeadzone: (deadzone: number) => Promise<{
+        ok: boolean
+        deadzone?: number
+        error?: string
+      }>
+      
+      // Get controller settings
+      getSettings: () => Promise<{
+        ok: boolean
+        deadzone: number
+        activeProfile: string
+        defaultBinds: Record<string, Record<string, string>>
+      }>
+      
+      // Set active controller profile
+      setProfile: (profile: string) => Promise<{
+        ok: boolean
+        profile?: string
+        error?: string
+      }>
+      
+      // Get supported controller types
+      getControllerTypes: () => Promise<{
+        ok: boolean
+        types: Array<{
+          type: string
+          name: string
+          supportsRumble: boolean
+        }>
+      }>
+      
+      // Test controller rumble
+      rumble: (index: number, weakMagnitude?: number, strongMagnitude?: number, duration?: number) => Promise<{
+        ok: boolean
+        error?: string
+      }>
+      
+      // Event listeners
+      onConnected: (callback: (data: {
+        index: number
+        id: string
+        type: string
+        model: string
+        name: string
+      }) => void) => () => void
+      
+      onDisconnected: (callback: (data: { index: number }) => void) => () => void
+    }
   }
 }
 

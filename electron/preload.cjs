@@ -151,3 +151,51 @@ contextBridge.exposeInMainWorld('ucOverlay', {
     return () => ipcRenderer.removeListener('uc:overlay-state-changed', listener)
   }
 })
+
+// Controller API (SDL2/XInput/DInput support via Gamepad API)
+contextBridge.exposeInMainWorld('ucController', {
+  // Get list of connected controllers
+  listControllers: () => ipcRenderer.invoke('uc:controller-list'),
+  
+  // Get current state of a specific controller
+  getControllerState: (index) => ipcRenderer.invoke('uc:controller-state', index),
+  
+  // Set custom binds for a specific controller
+  setControllerBinds: (controllerId, binds) => ipcRenderer.invoke('uc:controller-set-binds', controllerId, binds),
+  
+  // Set custom binds for a controller type (applies to all controllers of that type)
+  setTypeBinds: (controllerType, binds) => ipcRenderer.invoke('uc:controller-set-type-binds', controllerType, binds),
+  
+  // Get custom binds for a controller
+  getControllerBinds: (controllerId) => ipcRenderer.invoke('uc:controller-get-binds', controllerId),
+  
+  // Reset binds to default
+  resetControllerBinds: (controllerId) => ipcRenderer.invoke('uc:controller-reset-binds', controllerId),
+  
+  // Set stick deadzone (0-1)
+  setDeadzone: (deadzone) => ipcRenderer.invoke('uc:controller-set-deadzone', deadzone),
+  
+  // Get controller settings
+  getSettings: () => ipcRenderer.invoke('uc:controller-get-settings'),
+  
+  // Set active controller profile
+  setProfile: (profile) => ipcRenderer.invoke('uc:controller-set-profile', profile),
+  
+  // Get supported controller types
+  getControllerTypes: () => ipcRenderer.invoke('uc:controller-get-types'),
+  
+  // Test controller rumble
+  rumble: (index, weakMagnitude, strongMagnitude, duration) => ipcRenderer.invoke('uc:controller-rumble', index, weakMagnitude, strongMagnitude, duration),
+  
+  // Event listeners for controller connection/disconnection
+  onConnected: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('uc:controller-connected', listener)
+    return () => ipcRenderer.removeListener('uc:controller-connected', listener)
+  },
+  onDisconnected: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('uc:controller-disconnected', listener)
+    return () => ipcRenderer.removeListener('uc:controller-disconnected', listener)
+  }
+})

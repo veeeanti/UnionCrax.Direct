@@ -4724,6 +4724,611 @@ ipcMain.handle('uc:vr-pick-steamvr-dir', async () => {
   }
 })
 
+// =============================================================
+//   Controller Support (SDL2 / XInput / DInput - Gamepad API)
+// =============================================================
+
+// Controller state management
+const controllerState = {
+  // Connected controllers by gamepad index
+  controllers: new Map(),
+  // Custom bind mappings (controller-specific)
+  bindMappings: new Map(),
+  // Default binds for each controller type
+  defaultBinds: {
+    // Standard gamepad layout
+    standard: {
+      buttonA: 'a',
+      buttonB: 'b',
+      buttonX: 'x',
+      buttonY: 'y',
+      leftBumper: 'lb',
+      rightBumper: 'rb',
+      leftTrigger: 'lt',
+      rightTrigger: 'rt',
+      back: 'back',
+      start: 'start',
+      leftStick: 'ls',
+      rightStick: 'rs',
+      dpadUp: 'dpup',
+      dpadDown: 'dpdown',
+      dpadLeft: 'dpleft',
+      dpadRight: 'dpright',
+      leftStickX: 'lsx',
+      leftStickY: 'lsy',
+      rightStickX: 'rsx',
+      rightStickY: 'rsy'
+    }
+  },
+  // Active controller profile
+  activeProfile: 'default',
+  // Deadzone for analog sticks
+  deadzone: 0.15,
+  // Rumble state
+  rumble: new Map()
+}
+
+// Controller mapping detection - maps various controller types to our standard layout
+const controllerMappings = {
+  // Xbox controllers (XInput)
+  'xbox': {
+    name: 'Xbox Controller',
+    mapping: {
+      0: 'buttonA',      // A
+      1: 'buttonB',      // B
+      2: 'buttonX',     // X
+      3: 'buttonY',      // Y
+      4: 'leftBumper',    // LB
+      5: 'rightBumper',   // RB
+      6: 'leftTrigger',  // LT
+      7: 'rightTrigger',  // RT
+      8: 'back',          // Back
+      9: 'start',         // Start
+      10: 'leftStick',    // LS
+      11: 'rightStick',   // RS
+      12: 'dpadUp',       // D-pad Up
+      13: 'dpadDown',     // D-pad Down
+      14: 'dpadLeft',     // D-pad Left
+      15: 'dpadRight',    // D-pad Right
+      // Axes
+      0: 'leftStickX',    // Left Stick X
+      1: 'leftStickY',   // Left Stick Y
+      2: 'rightStickX',   // Right Stick X
+      3: 'rightStickY'   // Right Stick Y
+    }
+  },
+  // PlayStation controllers (SDL2 / DInput)
+  'playstation': {
+    name: 'PlayStation Controller',
+    mapping: {
+      0: 'buttonX',      // Cross
+      1: 'buttonA',      // Circle
+      2: 'buttonB',      // Square
+      3: 'buttonY',      // Triangle
+      4: 'leftBumper',   // L1
+      5: 'rightBumper',  // R1
+      6: 'leftTrigger',  // L2
+      7: 'rightTrigger', // R2
+      8: 'back',          // Share
+      9: 'start',         // Options
+      10: 'leftStick',   // L3
+      11: 'rightStick',  // R3
+      12: 'dpadUp',      // D-pad Up
+      13: 'dpadDown',    // D-pad Down
+      14: 'dpadLeft',    // D-pad Left
+      15: 'dpadRight'    // D-pad Right
+    }
+  },
+  // Nintendo controllers
+  'nintendo': {
+    name: 'Nintendo Controller',
+    mapping: {
+      0: 'buttonA',      // B (right)
+      1: 'buttonB',      // A (down)
+      2: 'buttonX',      // Y (left)
+      3: 'buttonY',      // X (up)
+      4: 'leftBumper',   // L
+      5: 'rightBumper',  // R
+      6: 'leftTrigger',  // ZL
+      7: 'rightTrigger', // ZR
+      8: 'back',          // -
+      9: 'start',         // +
+      10: 'leftStick',   // LS
+      11: 'rightStick',  // RS
+      12: 'dpadUp',      // D-pad Up
+      13: 'dpadDown',    // D-pad Down
+      14: 'dpadLeft',    // D-pad Left
+      15: 'dpadRight'    // D-pad Right
+    }
+  },
+  // Generic / DInput controllers
+  'generic': {
+    name: 'Generic Controller',
+    mapping: {
+      0: 'buttonA',
+      1: 'buttonB',
+      2: 'buttonX',
+      3: 'buttonY',
+      4: 'leftBumper',
+      5: 'rightBumper',
+      6: 'leftTrigger',
+      7: 'rightTrigger',
+      8: 'back',
+      9: 'start',
+      10: 'leftStick',
+      11: 'rightStick',
+      12: 'dpadUp',
+      13: 'dpadDown',
+      14: 'dpadLeft',
+      15: 'dpadRight'
+    }
+  }
+}
+
+// Detect controller type from gamepad ID
+function detectControllerType(gamepad) {
+  const id = (gamepad.id || '').toLowerCase()
+  
+  // Xbox controllers (Windows XInput)
+  if (id.includes('xbox') || id.includes('microsoft') || id.includes('controller')) {
+    // Check for specific Xbox models
+    if (id.includes('xbox one') || id.includes('xbox series')) {
+      return { type: 'xbox', model: 'xbox-series', name: 'Xbox One/Series Controller' }
+    }
+    if (id.includes('xbox 360')) {
+      return { type: 'xbox', model: 'xbox-360', name: 'Xbox 360 Controller' }
+    }
+    return { type: 'xbox', model: 'xbox-generic', name: 'Xbox Controller' }
+  }
+  
+  // PlayStation controllers (SDL2 / DInput)
+  if (id.includes('playstation') || id.includes('ps5') || id.includes('ps4') || id.includes('dualsense') || id.includes('dualshock')) {
+    if (id.includes('ps5') || id.includes('dualsense')) {
+      return { type: 'playstation', model: 'ps5', name: 'DualSense Controller' }
+    }
+    if (id.includes('ps4') || id.includes('dualshock')) {
+      return { type: 'playstation', model: 'ps4', name: 'DualShock Controller' }
+    }
+    return { type: 'playstation', model: 'ps-generic', name: 'PlayStation Controller' }
+  }
+  
+  // Nintendo controllers
+  if (id.includes('nintendo') || id.includes('switch') || id.includes('joy-con') || id.includes('pro controller')) {
+    if (id.includes('pro controller')) {
+      return { type: 'nintendo', model: 'switch-pro', name: 'Nintendo Switch Pro Controller' }
+    }
+    if (id.includes('joy-con')) {
+      return { type: 'nintendo', model: 'switch-joycon', name: 'Joy-Con Controller' }
+    }
+    return { type: 'nintendo', model: 'switch-generic', name: 'Nintendo Switch Controller' }
+  }
+  
+  // Generic DInput controllers (often third-party)
+  if (id.includes('generic') || id.includes('usb') || id.includes('gamepad')) {
+    return { type: 'generic', model: 'generic', name: 'Generic USB Controller' }
+  }
+  
+  // Default fallback
+  return { type: 'generic', model: 'unknown', name: gamepad.id || 'Unknown Controller' }
+}
+
+// Apply deadzone to analog value
+function applyDeadzone(value, deadzone) {
+  if (Math.abs(value) < deadzone) return 0
+  // Apply gradual deadzone curve
+  const sign = Math.sign(value)
+  const normalized = (Math.abs(value) - deadzone) / (1 - deadzone)
+  return sign * normalized
+}
+
+// Get button state with mapping applied
+function getControllerState(gamepad, mapping, deadzone) {
+  const state = {
+    connected: gamepad.connected,
+    index: gamepad.index,
+    id: gamepad.id,
+    timestamp: gamepad.timestamp,
+    buttons: {},
+    axes: {}
+  }
+  
+  // Map buttons
+  const buttonMapping = mapping?.mapping || controllerMappings.generic.mapping
+  for (let i = 0; i < gamepad.buttons.length; i++) {
+    const btn = gamepad.buttons[i]
+    const mappedName = buttonMapping[i]
+    if (mappedName) {
+      state.buttons[mappedName] = {
+        pressed: btn.pressed,
+        value: btn.value,
+        touched: btn.touched || btn.pressed
+      }
+    }
+  }
+  
+  // Map axes (sticks and triggers)
+  for (let i = 0; i < gamepad.axes.length; i++) {
+    const rawValue = gamepad.axes[i]
+    const mappedName = buttonMapping[i]
+    if (mappedName) {
+      // For triggers (usually axes 2-3 on some controllers), don't apply deadzone
+      const isTrigger = mappedName.includes('Trigger')
+      state.axes[mappedName] = isTrigger ? rawValue : applyDeadzone(rawValue, deadzone)
+    }
+  }
+  
+  return state
+}
+
+// Load controller settings from disk
+function loadControllerSettings() {
+  try {
+    const controllerSettingsPath = path.join(app.getPath('userData'), 'controller-settings.json')
+    if (fs.existsSync(controllerSettingsPath)) {
+      const data = JSON.parse(fs.readFileSync(controllerSettingsPath, 'utf8'))
+      if (data.bindMappings) {
+        controllerState.bindMappings = new Map(Object.entries(data.bindMappings))
+      }
+      if (data.deadzone !== undefined) {
+        controllerState.deadzone = data.deadzone
+      }
+      if (data.activeProfile) {
+        controllerState.activeProfile = data.activeProfile
+      }
+      ucLog('Controller settings loaded')
+    }
+  } catch (err) {
+    ucLog(`Failed to load controller settings: ${err.message}`, 'warn')
+  }
+}
+
+// Save controller settings to disk
+function saveControllerSettings() {
+  try {
+    const controllerSettingsPath = path.join(app.getPath('userData'), 'controller-settings.json')
+    const data = {
+      bindMappings: Object.fromEntries(controllerState.bindMappings),
+      deadzone: controllerState.deadzone,
+      activeProfile: controllerState.activeProfile,
+      savedAt: Date.now()
+    }
+    fs.writeFileSync(controllerSettingsPath, JSON.stringify(data, null, 2))
+    ucLog('Controller settings saved')
+  } catch (err) {
+    ucLog(`Failed to save controller settings: ${err.message}`, 'error')
+  }
+}
+
+// Poll connected controllers and update state
+function pollControllers() {
+  try {
+    const gamepads = navigator.getGamepads()
+    if (!gamepads) return
+    
+    for (const gamepad of gamepads) {
+      if (!gamepad) continue
+      
+      // Detect or update controller type
+      let controllerInfo = controllerState.controllers.get(gamepad.index)
+      if (!controllerInfo || controllerInfo.id !== gamepad.id) {
+        // New controller connected
+        const typeInfo = detectControllerType(gamepad)
+        controllerInfo = {
+          index: gamepad.index,
+          id: gamepad.id,
+          type: typeInfo.type,
+          model: typeInfo.model,
+          name: typeInfo.name,
+          mapping: controllerMappings[typeInfo.type] || controllerMappings.generic,
+          connected: true,
+          lastUpdate: Date.now()
+        }
+        controllerState.controllers.set(gamepad.index, controllerInfo)
+        ucLog(`Controller connected: ${controllerInfo.name} (index: ${gamepad.index})`)
+        
+        // Notify renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('uc:controller-connected', {
+            index: gamepad.index,
+            id: gamepad.id,
+            type: controllerInfo.type,
+            model: controllerInfo.model,
+            name: controllerInfo.name
+          })
+        }
+      }
+      
+      // Update connected state
+      controllerInfo.connected = gamepad.connected
+      controllerInfo.lastUpdate = Date.now()
+      
+      // Get current state with mapping applied
+      const currentState = getControllerState(gamepad, controllerInfo.mapping, controllerState.deadzone)
+      controllerInfo.state = currentState
+      
+      // Check for custom binds for this controller
+      const customBinds = controllerState.bindMappings.get(gamepad.id) || controllerState.bindMappings.get(controllerInfo.type)
+      if (customBinds) {
+        controllerInfo.customBinds = customBinds
+      }
+    }
+    
+    // Check for disconnected controllers
+    for (const [index, info] of controllerState.controllers) {
+      const gamepad = gamepads[index]
+      if (!gamepad || !gamepad.connected) {
+        ucLog(`Controller disconnected: ${info.name} (index: ${index})`)
+        controllerState.controllers.delete(index)
+        
+        // Notify renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('uc:controller-disconnected', { index })
+        }
+      }
+    }
+  } catch (err) {
+    ucLog(`Controller poll error: ${err.message}`, 'error')
+  }
+}
+
+// Start controller polling
+let controllerPollInterval = null
+function startControllerPolling() {
+  if (controllerPollInterval) return
+  
+  // Poll at 60Hz (every ~16ms) for responsive input
+  controllerPollInterval = setInterval(pollControllers, 16)
+  ucLog('Controller polling started')
+}
+
+// Stop controller polling
+function stopControllerPolling() {
+  if (controllerPollInterval) {
+    clearInterval(controllerPollInterval)
+    controllerPollInterval = null
+    ucLog('Controller polling stopped')
+  }
+}
+
+// IPC: Get list of connected controllers
+ipcMain.handle('uc:controller-list', () => {
+  const controllers = []
+  for (const [index, info] of controllerState.controllers) {
+    if (info.connected) {
+      controllers.push({
+        index,
+        id: info.id,
+        type: info.type,
+        model: info.model,
+        name: info.name,
+        hasCustomBinds: !!info.customBinds
+      })
+    }
+  }
+  return { ok: true, controllers }
+})
+
+// IPC: Get current state of a specific controller
+ipcMain.handle('uc:controller-state', (_event, index) => {
+  const info = controllerState.controllers.get(index)
+  if (!info || !info.connected) {
+    return { ok: false, error: 'Controller not found or disconnected' }
+  }
+  
+  return {
+    ok: true,
+    state: info.state,
+    type: info.type,
+    model: info.model,
+    name: info.name,
+    customBinds: info.customBinds
+  }
+})
+
+// IPC: Set custom bind mapping for a controller
+ipcMain.handle('uc:controller-set-binds', (_event, controllerId, binds) => {
+  try {
+    if (!controllerId || !binds) {
+      return { ok: false, error: 'Missing controller ID or binds' }
+    }
+    
+    // Validate binds
+    const validActions = [
+      'buttonA', 'buttonB', 'buttonX', 'buttonY',
+      'leftBumper', 'rightBumper', 'leftTrigger', 'rightTrigger',
+      'back', 'start', 'leftStick', 'rightStick',
+      'dpadUp', 'dpadDown', 'dpadLeft', 'dpadRight',
+      'leftStickX', 'leftStickY', 'rightStickX', 'rightStickY'
+    ]
+    
+    const validatedBinds = {}
+    for (const [action, button] of Object.entries(binds)) {
+      if (validActions.includes(action)) {
+        validatedBinds[action] = String(button)
+      }
+    }
+    
+    // Save the custom binds
+    controllerState.bindMappings.set(controllerId, validatedBinds)
+    
+    // Update controller info if controller is connected
+    for (const [index, info] of controllerState.controllers) {
+      if (info.id === controllerId) {
+        info.customBinds = validatedBinds
+      }
+    }
+    
+    saveControllerSettings()
+    ucLog(`Controller binds updated for: ${controllerId}`)
+    
+    return { ok: true, binds: validatedBinds }
+  } catch (err) {
+    ucLog(`Failed to set controller binds: ${err.message}`, 'error')
+    return { ok: false, error: err.message }
+  }
+})
+
+// IPC: Set binds for a controller type (applies to all controllers of that type)
+ipcMain.handle('uc:controller-set-type-binds', (_event, controllerType, binds) => {
+  try {
+    if (!controllerType || !binds) {
+      return { ok: false, error: 'Missing controller type or binds' }
+    }
+    
+    // Validate binds
+    const validActions = [
+      'buttonA', 'buttonB', 'buttonX', 'buttonY',
+      'leftBumper', 'rightBumper', 'leftTrigger', 'rightTrigger',
+      'back', 'start', 'leftStick', 'rightStick',
+      'dpadUp', 'dpadDown', 'dpadLeft', 'dpadRight',
+      'leftStickX', 'leftStickY', 'rightStickX', 'rightStickY'
+    ]
+    
+    const validatedBinds = {}
+    for (const [action, button] of Object.entries(binds)) {
+      if (validActions.includes(action)) {
+        validatedBinds[action] = String(button)
+      }
+    }
+    
+    // Save the type-level binds
+    controllerState.bindMappings.set(controllerType, validatedBinds)
+    
+    // Update all connected controllers of this type
+    for (const [index, info] of controllerState.controllers) {
+      if (info.type === controllerType) {
+        info.customBinds = validatedBinds
+      }
+    }
+    
+    saveControllerSettings()
+    ucLog(`Controller type binds updated for: ${controllerType}`)
+    
+    return { ok: true, binds: validatedBinds }
+  } catch (err) {
+    ucLog(`Failed to set controller type binds: ${err.message}`, 'error')
+    return { ok: false, error: err.message }
+  }
+})
+
+// IPC: Get custom binds for a controller
+ipcMain.handle('uc:controller-get-binds', (_event, controllerId) => {
+  const binds = controllerState.bindMappings.get(controllerId)
+  return { ok: true, binds: binds || null }
+})
+
+// IPC: Reset binds to default for a controller
+ipcMain.handle('uc:controller-reset-binds', (_event, controllerId) => {
+  try {
+    controllerState.bindMappings.delete(controllerId)
+    
+    // Update controller info
+    for (const [index, info] of controllerState.controllers) {
+      if (info.id === controllerId) {
+        delete info.customBinds
+      }
+    }
+    
+    saveControllerSettings()
+    ucLog(`Controller binds reset for: ${controllerId}`)
+    
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+// IPC: Set deadzone
+ipcMain.handle('uc:controller-set-deadzone', (_event, deadzone) => {
+  try {
+    const value = parseFloat(deadzone)
+    if (isNaN(value) || value < 0 || value > 1) {
+      return { ok: false, error: 'Deadzone must be between 0 and 1' }
+    }
+    controllerState.deadzone = value
+    saveControllerSettings()
+    ucLog(`Controller deadzone set to: ${value}`)
+    return { ok: true, deadzone: value }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+// IPC: Get controller settings
+ipcMain.handle('uc:controller-get-settings', () => {
+  return {
+    ok: true,
+    deadzone: controllerState.deadzone,
+    activeProfile: controllerState.activeProfile,
+    defaultBinds: controllerState.defaultBinds
+  }
+})
+
+// IPC: Set active profile
+ipcMain.handle('uc:controller-set-profile', (_event, profile) => {
+  try {
+    controllerState.activeProfile = profile || 'default'
+    saveControllerSettings()
+    ucLog(`Controller profile set to: ${controllerState.activeProfile}`)
+    return { ok: true, profile: controllerState.activeProfile }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+// IPC: Get supported controller types
+ipcMain.handle('uc:controller-get-types', () => {
+  return {
+    ok: true,
+    types: [
+      { type: 'xbox', name: 'Xbox Controller', supportsRumble: true },
+      { type: 'playstation', name: 'PlayStation Controller', supportsRumble: true },
+      { type: 'nintendo', name: 'Nintendo Controller', supportsRumble: true },
+      { type: 'generic', name: 'Generic Controller', supportsRumble: false }
+    ]
+  }
+})
+
+// IPC: Test controller rumble
+ipcMain.handle('uc:controller-rumble', (_event, index, weakMagnitude, strongMagnitude, duration) => {
+  try {
+    const info = controllerState.controllers.get(index)
+    if (!info || !info.connected) {
+      return { ok: false, error: 'Controller not found' }
+    }
+    
+    const gamepads = navigator.getGamepads()
+    const gamepad = gamepads[index]
+    
+    if (gamepad && gamepad.vibrationActuator) {
+      gamepad.vibrationActuator.playEffect('dual-rumble', {
+        startDelay: 0,
+        duration: duration || 500,
+        weakMagnitude: weakMagnitude || 0.5,
+        strongMagnitude: strongMagnitude || 0.5
+      })
+      ucLog(`Controller rumble: index=${index}, weak=${weakMagnitude}, strong=${strongMagnitude}, duration=${duration}ms`)
+      return { ok: true }
+    }
+    
+    return { ok: false, error: 'Controller does not support rumble' }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+// Initialize controller system on app ready
+app.whenReady().then(() => {
+  loadControllerSettings()
+  startControllerPolling()
+  ucLog('Controller system initialized')
+})
+
+// Cleanup on quit
+app.on('before-quit', () => {
+  stopControllerPolling()
+})
+
 // IPC: Check if a VR game should use VR mode (based on settings)
 ipcMain.handle('uc:vr-get-settings', () => {
   try {
