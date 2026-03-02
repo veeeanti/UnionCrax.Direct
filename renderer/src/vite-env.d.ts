@@ -205,6 +205,33 @@ declare global {
         error?: string
       }>
     }
+    ucOverlay?: {
+      show: (appid?: string) => Promise<{ ok: boolean; error?: string }>
+      hide: () => Promise<{ ok: boolean; error?: string }>
+      toggle: (appid?: string) => Promise<{ ok: boolean; visible?: boolean; error?: string }>
+      getStatus: () => Promise<{
+        ok: boolean
+        enabled: boolean
+        visible: boolean
+        hotkey: string
+        autoShow: boolean
+        currentAppid: string | null
+      }>
+      getSettings: () => Promise<{
+        ok: boolean
+        enabled: boolean
+        hotkey: string
+        autoShow: boolean
+      }>
+      setSettings: (settings: {
+        overlayEnabled?: boolean
+        overlayHotkey?: string
+        overlayAutoShow?: boolean
+      }) => Promise<{ ok: boolean; error?: string }>
+      onShow: (callback: (data: { appid: string | null }) => void) => () => void
+      onHide: (callback: (data: {}) => void) => () => void
+      onStateChanged: (callback: (data: { visible: boolean; appid: string | null }) => void) => () => void
+    }
   }
 }
 

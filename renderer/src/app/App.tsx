@@ -12,11 +12,14 @@ import { AccountOverviewPage } from "@/app/pages/AccountOverviewPage"
 import { ViewHistoryPage } from "@/app/pages/ViewHistoryPage"
 import { SearchHistoryPage } from "@/app/pages/SearchHistoryPage"
 import { DownloadsProvider } from "@/context/downloads-context"
+import { InGameOverlay } from "@/components/InGameOverlay"
 
 export default function App() {
   return (
     <HashRouter>
       <DownloadsProvider>
+        {/* In-Game Overlay - visible when overlay window is shown */}
+        <InGameOverlay />
         <Routes>
           <Route element={<AppLayout />}>
             <Route path="/" element={<LauncherPage />} />
@@ -30,6 +33,8 @@ export default function App() {
             <Route path="/account" element={<AccountOverviewPage />} />
             <Route path="/view-history" element={<ViewHistoryPage />} />
             <Route path="/search-history" element={<SearchHistoryPage />} />
+            {/* Overlay page route (rendered in separate window) */}
+            <Route path="/overlay" element={<InGameOverlay />} />
           </Route>
         </Routes>
       </DownloadsProvider>

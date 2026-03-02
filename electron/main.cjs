@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, dialog, Tray, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, shell, ipcMain, dialog, Tray, Menu, nativeImage, globalShortcut } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const crypto = require('node:crypto')
@@ -83,6 +83,178 @@ const globalDownloadQueue = []
 const cancelledDownloadIds = new Set()
 const activeExtractions = new Set()
 const runningGames = new Map()
+
+// ============================================================
+// In-Game Overlay System (Steam-like)
+// ============================================================
+
+let overlayWindow = null
+let overlayEnabled = true
+let overlayHotkey = 'Shift+Tab'
+let currentOverlayAppid = null
+let overlayAutoShow = true
+
+// Create the overlay window (transparent, always on top, click-through capable)
+function createOverlayWindow() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    return overlayWindow
+  }
+
+  // Get primary display dimensions
+  const primaryDisplay = require('electron').screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.workAreaSize
+
+  overlayWindow = new BrowserWindow({
+    width: width,
+    height: height,
+    x: 0,
+    y: 0,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    focusable: true,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.cjs'),
+      webSecurity: true
+    }
+  })
+
+  // Load the overlay page
+  if (isDev) {
+    overlayWindow.loadURL('http://localhost:5173/#/overlay')
+  } else {
+    overlayWindow.loadFile(path.join(__dirname, '..', 'renderer', 'dist', 'index.html'), { hash: '/overlay' })
+  }
+
+  // Make the overlay transparent and ignore mouse events when hidden
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  overlayWindow.setVisibleOnAllWorkspaces(true)
+
+  overlayWindow.on('closed', () => {
+    overlayWindow = null
+    currentOverlayAppid = null
+  })
+
+  ucLog('Overlay window created')
+  return overlayWindow
+}
+
+// Show the overlay window
+function showOverlay(appid = null) {
+  if (!overlayEnabled) return
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    createOverlayWindow()
+  }
+  
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    currentOverlayAppid = appid
+    overlayWindow.show()
+    overlayWindow.focus()
+    overlayWindow.setIgnoreMouseEvents(false)
+    
+    // Notify renderer
+    overlayWindow.webContents.send('uc:overlay-show', { appid })
+    
+    // Notify main window
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('uc:overlay-state-changed', { visible: true, appid })
+    }
+    
+    ucLog(`Overlay shown for game: ${appid || 'unknown'}`)
+  }
+}
+
+// Hide the overlay window
+function hideOverlay() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.hide()
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    
+    // Notify renderer
+    overlayWindow.webContents.send('uc:overlay-hide', {})
+    
+    // Notify main window
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('uc:overlay-state-changed', { visible: false, appid: currentOverlayAppid })
+    }
+    
+    ucLog('Overlay hidden')
+  }
+}
+
+// Toggle the overlay visibility
+function toggleOverlay(appid = null) {
+  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) {
+    showOverlay(appid)
+  } else {
+    hideOverlay()
+  }
+}
+
+// Register global hotkey for overlay
+function registerOverlayHotkey() {
+  // Unregister existing hotkey first
+  globalShortcut.unregisterAll()
+  
+  if (overlayEnabled && overlayHotkey) {
+    const success = globalShortcut.register(overlayHotkey, () => {
+      ucLog(`Overlay hotkey pressed: ${overlayHotkey}`)
+      toggleOverlay(currentOverlayAppid)
+    })
+    
+    if (success) {
+      ucLog(`Overlay hotkey registered: ${overlayHotkey}`)
+    } else {
+      ucLog(`Failed to register overlay hotkey: ${overlayHotkey}`, 'warn')
+    }
+  }
+}
+
+// Update overlay settings
+function updateOverlaySettings(settings) {
+  const newEnabled = settings.overlayEnabled !== undefined ? settings.overlayEnabled : overlayEnabled
+  const newHotkey = settings.overlayHotkey || overlayHotkey
+  const newAutoShow = settings.overlayAutoShow !== undefined ? settings.overlayAutoShow : overlayAutoShow
+  
+  let changed = false
+  
+  if (newEnabled !== overlayEnabled) {
+    overlayEnabled = newEnabled
+    changed = true
+    if (!overlayEnabled) {
+      hideOverlay()
+      globalShortcut.unregisterAll()
+    }
+  }
+  
+  if (newHotkey !== overlayHotkey) {
+    overlayHotkey = newHotkey
+    changed = true
+  }
+  
+  if (newAutoShow !== overlayAutoShow) {
+    overlayAutoShow = newAutoShow
+    changed = true
+  }
+  
+  if (changed && overlayEnabled) {
+    registerOverlayHotkey()
+  }
+}
+
+// Check if a game is running and auto-show overlay if enabled
+function checkAndShowOverlayForGame(appid) {
+  if (overlayAutoShow && overlayEnabled && runningGames.has(appid)) {
+    showOverlay(appid)
+  }
+}
+
 const downloadDirName = 'UnionCrax.Direct'
 const installingDirName = 'installing'
 const installedDirName = 'installed'
@@ -2966,7 +3138,16 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   updateRpcSettings(readSettings()).catch(() => { })
-
+  
+  // Initialize overlay settings and register hotkey
+  const settings = readSettings() || {}
+  overlayEnabled = settings.overlayEnabled !== undefined ? settings.overlayEnabled : true
+  overlayHotkey = settings.overlayHotkey || 'Shift+Tab'
+  overlayAutoShow = settings.overlayAutoShow !== undefined ? settings.overlayAutoShow : true
+  if (overlayEnabled) {
+    registerOverlayHotkey()
+  }
+  
   ucLog(`App ready. Version: ${getAppVersion()}`)
 
   setInterval(() => {
@@ -4561,6 +4742,73 @@ ipcMain.handle('uc:vr-get-settings', () => {
   }
 })
 
+// ============================================================
+// In-Game Overlay IPC Handlers
+// ============================================================
+
+ipcMain.handle('uc:overlay-show', (_event, appid) => {
+  try {
+    showOverlay(appid)
+    return { ok: true }
+  } catch (err) {
+    ucLog(`Overlay show failed: ${err.message}`, 'error')
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('uc:overlay-hide', () => {
+  try {
+    hideOverlay()
+    return { ok: true }
+  } catch (err) {
+    ucLog(`Overlay hide failed: ${err.message}`, 'error')
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('uc:overlay-toggle', (_event, appid) => {
+  try {
+    toggleOverlay(appid)
+    return { ok: true, visible: overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible() }
+  } catch (err) {
+    ucLog(`Overlay toggle failed: ${err.message}`, 'error')
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('uc:overlay-status', () => {
+  return {
+    ok: true,
+    enabled: overlayEnabled,
+    visible: overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible(),
+    hotkey: overlayHotkey,
+    autoShow: overlayAutoShow,
+    currentAppid: currentOverlayAppid
+  }
+})
+
+ipcMain.handle('uc:overlay-set-settings', (_event, settings) => {
+  try {
+    const currentSettings = readSettings() || {}
+    const newSettings = { ...currentSettings, ...settings }
+    writeSettings(newSettings)
+    updateOverlaySettings(newSettings)
+    return { ok: true }
+  } catch (err) {
+    ucLog(`Overlay settings update failed: ${err.message}`, 'error')
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('uc:overlay-get-settings', () => {
+  return {
+    ok: true,
+    enabled: overlayEnabled,
+    hotkey: overlayHotkey,
+    autoShow: overlayAutoShow
+  }
+})
+
 ipcMain.handle('uc:game-exe-launch', async (_event, appid, exePath, gameName, showGameName) => {
   try {
     if (!exePath || typeof exePath !== 'string') return { ok: false }
@@ -4641,12 +4889,6 @@ ipcMain.handle('uc:game-exe-launch-admin', async (_event, appid, exePath, gameNa
         // Prepare environment - inherit all variables, apply Wine/Proton and VR env, ensure game directory is in PATH
         const env = buildVRGameEnv(buildLinuxGameEnv(process.env))
         env.PATH = `${cwd}:${env.PATH || ''}`
-        
-
-
-        // Prepare environment - inherit all variables and ensure game directory is in PATH
-        const env = { ...process.env }
-        env.PATH = `${cwd};${env.PATH || ''}`
 
         const proc = child_process.spawn(command, args, {
           detached: true,
