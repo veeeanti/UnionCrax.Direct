@@ -66,6 +66,7 @@ interface UseControllerReturn {
   // Polling control
   startPolling: () => void
   stopPolling: () => void
+  pollingActive: boolean
   // Event callbacks
   onConnect: (callback: (controller: ControllerInfo) => void) => () => void
   onDisconnect: (callback: (index: number) => void) => () => void
@@ -74,7 +75,7 @@ interface UseControllerReturn {
 /**
  * Hook for controller support (SDL2/XInput/DInput)
  * Provides access to connected controllers, state polling, and bind remapping
- * Similar to Steam's Steam Input but without requiring Steam
+ * Uses the browser's Gamepad API to detect controllers and sends data to main process
  */
 export function useController(): UseControllerReturn {
   const [controllers, setControllers] = useState<ControllerInfo[]>([])
@@ -86,6 +87,65 @@ export function useController(): UseControllerReturn {
   const [pollingActive, setPollingActive] = useState(false)
   const connectCallbacksRef = useRef<Set<(controller: ControllerInfo) => void>>(new Set())
   const disconnectCallbacksRef = useRef<Set<(index: number) => void>>(new Set())
+
+  // Poll Gamepad API and send data to main process
+  const pollGamepads = useCallback(() => {
+    if (!window.ucController) {
+      console.log('[Controller] ucController API not available yet')
+      return
+    }
+    
+    try {
+      // Use the standard Gamepad API
+      const gamepads = navigator.getGamepads ? navigator.getGamepads() : null
+      if (!gamepads) return
+      
+      // Convert to array-like structure for sending
+      const gamepadData: any[] = []
+      for (const gp of gamepads) {
+        if (gp) {
+          gamepadData.push({
+            index: gp.index,
+            id: gp.id,
+            connected: gp.connected,
+            timestamp: gp.timestamp,
+            // Serialize buttons
+            buttons: gp.buttons.map((btn: any) => ({
+              pressed: btn.pressed,
+              value: btn.value,
+              touched: btn.touched
+            })),
+            // Serialize axes
+            axes: Array.from(gp.axes)
+          })
+        }
+      }
+      
+      // Send to main process
+      window.ucController.sendGamepadData(gamepadData)
+    } catch (err) {
+      console.error('[Controller] Gamepad poll error:', err)
+    }
+  }, [])
+
+  // Start polling for gamepads
+  const startPolling = useCallback(() => {
+    if (pollIntervalRef.current || !window.ucController) return
+    
+    setPollingActive(true)
+    // Poll at 60Hz (every ~16ms) for smooth input
+    pollGamepads()
+    pollIntervalRef.current = setInterval(pollGamepads, 16)
+  }, [pollGamepads])
+
+  // Stop polling
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
+    setPollingActive(false)
+  }, [])
 
   // Initialize controller system
   useEffect(() => {
@@ -166,11 +226,57 @@ export function useController(): UseControllerReturn {
       })
     })
 
+    // Also set up rumble handler
+    const unsubRumble = window.ucController.onRumble((data) => {
+      // Handle rumble in renderer using Gamepad API
+      const gamepads = navigator.getGamepads ? navigator.getGamepads() : null
+      if (gamepads) {
+        const gamepad = gamepads[data.index]
+        if (gamepad && gamepad.vibrationActuator) {
+          gamepad.vibrationActuator.playEffect('dual-rumble', {
+            startDelay: 0,
+            duration: data.duration,
+            weakMagnitude: data.weakMagnitude,
+            strongMagnitude: data.strongMagnitude
+          }).catch(err => console.error('[Controller] Rumble error:', err))
+        }
+      }
+    })
+
     return () => {
       unsubConnect()
       unsubDisconnect()
+      unsubRumble()
     }
   }, [])
+
+  // Auto-start polling when hook is used
+  useEffect(() => {
+    // Wait for ucController API to be available before starting polling
+    const checkAndStart = () => {
+      if (window.ucController) {
+        console.log('[Controller] ucController API available, starting polling')
+        startPolling()
+      } else {
+        // Retry after a short delay if API not ready
+        setTimeout(checkAndStart, 100)
+      }
+    }
+    
+    checkAndStart()
+    
+    // Also try polling when window gains focus (helps detect controllers that were connected when app wasn't focused)
+    const handleFocus = () => {
+      console.log('[Controller] Window focused, triggering poll')
+      pollGamepads()
+    }
+    window.addEventListener('focus', handleFocus)
+    
+    return () => {
+      stopPolling()
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [startPolling, stopPolling, pollGamepads])
 
   // Get state for a specific controller
   const getState = useCallback(async (index: number): Promise<ControllerState | null> => {
@@ -257,31 +363,6 @@ export function useController(): UseControllerReturn {
     await window.ucController.rumble(index, weakMagnitude, strongMagnitude, duration)
   }, [])
 
-  // Start polling for controller state
-  const startPolling = useCallback(() => {
-    if (pollIntervalRef.current || !window.ucController) return
-    
-    setPollingActive(true)
-    pollIntervalRef.current = setInterval(async () => {
-      if (!window.ucController) return
-      
-      // Refresh controller list periodically
-      const listResult = await window.ucController.listControllers()
-      if (listResult.ok) {
-        setControllers(listResult.controllers)
-      }
-    }, 1000)
-  }, [])
-
-  // Stop polling
-  const stopPolling = useCallback(() => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-      pollIntervalRef.current = null
-    }
-    setPollingActive(false)
-  }, [])
-
   // Register connect callback
   const onConnect = useCallback((callback: (controller: ControllerInfo) => void) => {
     connectCallbacksRef.current.add(callback)
@@ -323,6 +404,7 @@ export function useController(): UseControllerReturn {
     rumble,
     startPolling,
     stopPolling,
+    pollingActive,
     onConnect,
     onDisconnect
   }

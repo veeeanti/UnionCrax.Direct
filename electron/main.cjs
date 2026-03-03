@@ -2969,6 +2969,27 @@ function createWindow() {
                 uc_log(`failed to migrate extracted files: ${String(e)}`)
               }
 
+              // Check for and run create_shortcut_on_desktop.bat if it exists
+              try {
+                const shortcutBatPath = path.join(installedRoot, 'create_shortcut_on_desktop.bat')
+                if (fs.existsSync(shortcutBatPath)) {
+                  uc_log(`Found create_shortcut_on_desktop.bat, executing it for ${entry?.appid}`)
+                  try {
+                    child_process.spawn(shortcutBatPath, [], {
+                      detached: true,
+                      stdio: 'ignore',
+                      windowsHide: true,
+                      cwd: installedRoot
+                    }).unref()
+                    uc_log(`Executed create_shortcut_on_desktop.bat for ${entry?.appid}`)
+                  } catch (batErr) {
+                    uc_log(`Failed to execute create_shortcut_on_desktop.bat: ${String(batErr)}`, 'warn')
+                  }
+                }
+              } catch (e) {
+                uc_log(`Error checking for create_shortcut_on_desktop.bat: ${String(e)}`, 'warn')
+              }
+
               // Clean up installing folder and manifest after successful extraction
               try {
                 try {
@@ -3045,6 +3066,27 @@ function createWindow() {
                 migrateInstallingExtras(installingRoot, installedRoot, skipNames)
               } catch (e) {
                 uc_log(`failed to migrate non-archive extras: ${String(e)}`)
+              }
+
+              // Check for and run create_shortcut_on_desktop.bat if it exists (for non-archive installs)
+              try {
+                const shortcutBatPath = path.join(installedRoot, 'create_shortcut_on_desktop.bat')
+                if (fs.existsSync(shortcutBatPath)) {
+                  uc_log(`Found create_shortcut_on_desktop.bat, executing it for ${entry?.appid}`)
+                  try {
+                    child_process.spawn(shortcutBatPath, [], {
+                      detached: true,
+                      stdio: 'ignore',
+                      windowsHide: true,
+                      cwd: installedRoot
+                    }).unref()
+                    uc_log(`Executed create_shortcut_on_desktop.bat for ${entry?.appid}`)
+                  } catch (batErr) {
+                    uc_log(`Failed to execute create_shortcut_on_desktop.bat: ${String(batErr)}`, 'warn')
+                  }
+                }
+              } catch (e) {
+                uc_log(`Error checking for create_shortcut_on_desktop.bat: ${String(e)}`, 'warn')
               }
 
               // Clean up installing folder after moving to installed
@@ -4159,6 +4201,57 @@ function normalizeRunnerPath(candidate, fallback) {
   return trimmed
 }
 
+// Path to the UC Launcher configuration file
+const LAUNCHER_INI_PATH = path.join(__dirname, '..', 'uc.launcher', 'union-crax.ini')
+
+/**
+ * Write game configuration to the UC Launcher INI file
+ * @param {string} exePath - Path to the game executable
+ * @param {string} workingDir - Working directory for the game
+ * @param {string} launchArgs - Command line arguments
+ */
+function writeLauncherConfig(exePath, workingDir, launchArgs) {
+  const configContent = `[Launcher]
+# Path to the game executable (required)
+# Can be absolute path or relative to the launcher's directory
+gameExe=${exePath}
+
+# Working directory for the game (optional)
+# If not specified, the launcher's directory will be used
+# Can be absolute path or relative to the launcher's directory
+workingDir=${workingDir}
+
+# Command line arguments to pass to the game (optional)
+# Separate multiple arguments with spaces
+launchArgs=${launchArgs}
+`
+  try {
+    fs.writeFileSync(LAUNCHER_INI_PATH, configContent, 'utf8')
+    ucLog(`Launcher config written: exe=${exePath}, cwd=${workingDir}, args=${launchArgs}`)
+    return true
+  } catch (err) {
+    ucLog(`Failed to write launcher config: ${err.message}`, 'error')
+    return false
+  }
+}
+
+/**
+ * Resolve the path to uc.launcher.exe
+ */
+function resolveLauncherPath() {
+  const launcherDir = path.join(__dirname, '..', 'uc.launcher')
+  const launcherExe = path.join(launcherDir, 'uc.launcher.exe')
+  
+  // Check if the launcher exists
+  if (fs.existsSync(launcherExe)) {
+    return launcherExe
+  }
+  
+  // Fallback: return the expected path anyway (for logging purposes)
+  ucLog(`UC Launcher not found at: ${launcherExe}`, 'warn')
+  return launcherExe
+}
+
 function resolveLaunchCommand(exePath) {
   const cwd = path.dirname(exePath)
   if (process.platform !== 'linux') {
@@ -4728,7 +4821,7 @@ ipcMain.handle('uc:vr-pick-steamvr-dir', async () => {
 //   Controller Support (SDL2 / XInput / DInput - Gamepad API)
 // =============================================================
 
-// Controller state management
+// Controller state management - stored in main process for persistence
 const controllerState = {
   // Connected controllers by gamepad index
   controllers: new Map(),
@@ -4866,8 +4959,8 @@ const controllerMappings = {
 }
 
 // Detect controller type from gamepad ID
-function detectControllerType(gamepad) {
-  const id = (gamepad.id || '').toLowerCase()
+function detectControllerType(gamepadId) {
+  const id = (gamepadId || '').toLowerCase()
   
   // Xbox controllers (Windows XInput)
   if (id.includes('xbox') || id.includes('microsoft') || id.includes('controller')) {
@@ -4909,20 +5002,84 @@ function detectControllerType(gamepad) {
   }
   
   // Default fallback
-  return { type: 'generic', model: 'unknown', name: gamepad.id || 'Unknown Controller' }
+  return { type: 'generic', model: 'unknown', name: gamepadId || 'Unknown Controller' }
 }
 
-// Apply deadzone to analog value
-function applyDeadzone(value, deadzone) {
-  if (Math.abs(value) < deadzone) return 0
-  // Apply gradual deadzone curve
-  const sign = Math.sign(value)
-  const normalized = (Math.abs(value) - deadzone) / (1 - deadzone)
-  return sign * normalized
+// Update controller state from renderer-reported gamepad data
+function updateControllerFromRenderer(gamepads) {
+  if (!Array.isArray(gamepads)) return
+  
+  // Track which indices are reported
+  const reportedIndices = new Set()
+  
+  for (const gp of gamepads) {
+    if (!gp || !gp.connected) continue
+    
+    reportedIndices.add(gp.index)
+    
+    // Detect or update controller type
+    let controllerInfo = controllerState.controllers.get(gp.index)
+    const isNew = !controllerInfo || controllerInfo.id !== gp.id
+    
+    if (isNew) {
+      // New controller connected
+      const typeInfo = detectControllerType(gp.id)
+      controllerInfo = {
+        index: gp.index,
+        id: gp.id,
+        type: typeInfo.type,
+        model: typeInfo.model,
+        name: typeInfo.name,
+        mapping: controllerMappings[typeInfo.type] || controllerMappings.generic,
+        connected: true,
+        lastUpdate: Date.now()
+      }
+      controllerState.controllers.set(gp.index, controllerInfo)
+      ucLog(`Controller connected: ${controllerInfo.name} (index: ${gp.index})`)
+      
+      // Notify renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('uc:controller-connected', {
+          index: gp.index,
+          id: gp.id,
+          type: controllerInfo.type,
+          model: controllerInfo.model,
+          name: controllerInfo.name
+        })
+      }
+    }
+    
+    // Update connected state
+    controllerInfo.connected = true
+    controllerInfo.lastUpdate = Date.now()
+    
+    // Store raw gamepad data for state queries
+    controllerInfo.rawGamepad = gp
+  }
+  
+  // Check for disconnected controllers
+  for (const [index, info] of controllerState.controllers) {
+    if (!reportedIndices.has(index)) {
+      ucLog(`Controller disconnected: ${info.name} (index: ${index})`)
+      controllerState.controllers.delete(index)
+      
+      // Notify renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('uc:controller-disconnected', { index })
+      }
+    }
+  }
 }
 
 // Get button state with mapping applied
 function getControllerState(gamepad, mapping, deadzone) {
+  const applyDeadzone = (value) => {
+    if (Math.abs(value) < deadzone) return 0
+    const sign = Math.sign(value)
+    const normalized = (Math.abs(value) - deadzone) / (1 - deadzone)
+    return sign * normalized
+  }
+
   const state = {
     connected: gamepad.connected,
     index: gamepad.index,
@@ -4953,7 +5110,7 @@ function getControllerState(gamepad, mapping, deadzone) {
     if (mappedName) {
       // For triggers (usually axes 2-3 on some controllers), don't apply deadzone
       const isTrigger = mappedName.includes('Trigger')
-      state.axes[mappedName] = isTrigger ? rawValue : applyDeadzone(rawValue, deadzone)
+      state.axes[mappedName] = isTrigger ? rawValue : applyDeadzone(rawValue)
     }
   }
   
@@ -4999,96 +5156,10 @@ function saveControllerSettings() {
   }
 }
 
-// Poll connected controllers and update state
-function pollControllers() {
-  try {
-    const gamepads = navigator.getGamepads()
-    if (!gamepads) return
-    
-    for (const gamepad of gamepads) {
-      if (!gamepad) continue
-      
-      // Detect or update controller type
-      let controllerInfo = controllerState.controllers.get(gamepad.index)
-      if (!controllerInfo || controllerInfo.id !== gamepad.id) {
-        // New controller connected
-        const typeInfo = detectControllerType(gamepad)
-        controllerInfo = {
-          index: gamepad.index,
-          id: gamepad.id,
-          type: typeInfo.type,
-          model: typeInfo.model,
-          name: typeInfo.name,
-          mapping: controllerMappings[typeInfo.type] || controllerMappings.generic,
-          connected: true,
-          lastUpdate: Date.now()
-        }
-        controllerState.controllers.set(gamepad.index, controllerInfo)
-        ucLog(`Controller connected: ${controllerInfo.name} (index: ${gamepad.index})`)
-        
-        // Notify renderer
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('uc:controller-connected', {
-            index: gamepad.index,
-            id: gamepad.id,
-            type: controllerInfo.type,
-            model: controllerInfo.model,
-            name: controllerInfo.name
-          })
-        }
-      }
-      
-      // Update connected state
-      controllerInfo.connected = gamepad.connected
-      controllerInfo.lastUpdate = Date.now()
-      
-      // Get current state with mapping applied
-      const currentState = getControllerState(gamepad, controllerInfo.mapping, controllerState.deadzone)
-      controllerInfo.state = currentState
-      
-      // Check for custom binds for this controller
-      const customBinds = controllerState.bindMappings.get(gamepad.id) || controllerState.bindMappings.get(controllerInfo.type)
-      if (customBinds) {
-        controllerInfo.customBinds = customBinds
-      }
-    }
-    
-    // Check for disconnected controllers
-    for (const [index, info] of controllerState.controllers) {
-      const gamepad = gamepads[index]
-      if (!gamepad || !gamepad.connected) {
-        ucLog(`Controller disconnected: ${info.name} (index: ${index})`)
-        controllerState.controllers.delete(index)
-        
-        // Notify renderer
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('uc:controller-disconnected', { index })
-        }
-      }
-    }
-  } catch (err) {
-    ucLog(`Controller poll error: ${err.message}`, 'error')
-  }
-}
-
-// Start controller polling
-let controllerPollInterval = null
-function startControllerPolling() {
-  if (controllerPollInterval) return
-  
-  // Poll at 60Hz (every ~16ms) for responsive input
-  controllerPollInterval = setInterval(pollControllers, 16)
-  ucLog('Controller polling started')
-}
-
-// Stop controller polling
-function stopControllerPolling() {
-  if (controllerPollInterval) {
-    clearInterval(controllerPollInterval)
-    controllerPollInterval = null
-    ucLog('Controller polling stopped')
-  }
-}
+// IPC: Receive gamepad data from renderer (where Gamepad API exists)
+ipcMain.on('uc:controller-gamepad-data', (_event, gamepads) => {
+  updateControllerFromRenderer(gamepads)
+})
 
 // IPC: Get list of connected controllers
 ipcMain.handle('uc:controller-list', () => {
@@ -5115,14 +5186,20 @@ ipcMain.handle('uc:controller-state', (_event, index) => {
     return { ok: false, error: 'Controller not found or disconnected' }
   }
   
-  return {
-    ok: true,
-    state: info.state,
-    type: info.type,
-    model: info.model,
-    name: info.name,
-    customBinds: info.customBinds
+  // Get state from raw gamepad data if available
+  if (info.rawGamepad) {
+    const state = getControllerState(info.rawGamepad, info.mapping, controllerState.deadzone)
+    return {
+      ok: true,
+      state,
+      type: info.type,
+      model: info.model,
+      name: info.name,
+      customBinds: info.customBinds
+    }
   }
+  
+  return { ok: false, error: 'Controller state not available' }
 })
 
 // IPC: Set custom bind mapping for a controller
@@ -5289,29 +5366,29 @@ ipcMain.handle('uc:controller-get-types', () => {
   }
 })
 
-// IPC: Test controller rumble
-ipcMain.handle('uc:controller-rumble', (_event, index, weakMagnitude, strongMagnitude, duration) => {
+// IPC: Test controller rumble - receives gamepad data from renderer
+ipcMain.handle('uc:controller-rumble', (_event, index, weakMagnitude, strongMagnitude, duration, gamepadData) => {
   try {
     const info = controllerState.controllers.get(index)
     if (!info || !info.connected) {
       return { ok: false, error: 'Controller not found' }
     }
     
-    const gamepads = navigator.getGamepads()
-    const gamepad = gamepads[index]
+    // The renderer will handle the actual rumble using the Gamepad API
+    // This IPC just confirms the request and logs it
+    ucLog(`Controller rumble request: index=${index}, weak=${weakMagnitude}, strong=${strongMagnitude}, duration=${duration}ms`)
     
-    if (gamepad && gamepad.vibrationActuator) {
-      gamepad.vibrationActuator.playEffect('dual-rumble', {
-        startDelay: 0,
-        duration: duration || 500,
+    // Forward to renderer for actual rumble
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('uc:controller-rumble', {
+        index,
         weakMagnitude: weakMagnitude || 0.5,
-        strongMagnitude: strongMagnitude || 0.5
+        strongMagnitude: strongMagnitude || 0.5,
+        duration: duration || 500
       })
-      ucLog(`Controller rumble: index=${index}, weak=${weakMagnitude}, strong=${strongMagnitude}, duration=${duration}ms`)
-      return { ok: true }
     }
     
-    return { ok: false, error: 'Controller does not support rumble' }
+    return { ok: true }
   } catch (err) {
     return { ok: false, error: err.message }
   }
@@ -5320,13 +5397,12 @@ ipcMain.handle('uc:controller-rumble', (_event, index, weakMagnitude, strongMagn
 // Initialize controller system on app ready
 app.whenReady().then(() => {
   loadControllerSettings()
-  startControllerPolling()
-  ucLog('Controller system initialized')
+  ucLog('Controller system initialized (waiting for renderer to send gamepad data)')
 })
 
 // Cleanup on quit
 app.on('before-quit', () => {
-  stopControllerPolling()
+  ucLog('Controller system shutting down')
 })
 
 // IPC: Check if a VR game should use VR mode (based on settings)
@@ -5420,6 +5496,32 @@ ipcMain.handle('uc:game-exe-launch', async (_event, appid, exePath, gameName, sh
     ucLog(`Launching game: ${appid} at ${exePath}`)
     try {
       const { command, args, cwd } = resolveLaunchCommand(exePath)
+
+      // Write game configuration to launcher INI file
+      const workingDir = path.dirname(exePath)
+      const launchArgs = '' // No additional arguments by default
+      
+      if (!writeLauncherConfig(exePath, workingDir, launchArgs)) {
+        ucLog('Failed to write launcher config, falling back to direct launch', 'warn')
+      } else {
+        // Use the UC Launcher instead of directly launching the game
+        const launcherPath = resolveLauncherPath()
+        ucLog(`Launching game via UC Launcher: ${launcherPath}`)
+        
+        const proc = child_process.spawn(launcherPath, [], {
+          detached: true,
+          stdio: 'ignore',
+          cwd: path.dirname(launcherPath),
+        })
+        proc.unref()
+
+        if (appid || gameName) {
+          registerRunningGame(appid, exePath, proc, gameName, showGameName)
+        }
+        
+        ucLog(`Game launched via UC Launcher: ${exePath}`)
+        return { ok: true }
+      }
 
       // Verbose logging
       const settings = readSettings() || {}
@@ -5518,82 +5620,161 @@ ipcMain.handle('uc:game-exe-launch-admin', async (_event, appid, exePath, gameNa
     }
     ucLog(`Launching game as admin: ${appid} at ${exePath}`)
     try {
+      // Write game configuration to launcher INI file
       const workingDir = path.dirname(exePath)
+      const launchArgs = '' // No additional arguments by default
+      
+      if (writeLauncherConfig(exePath, workingDir, launchArgs)) {
+        // Use UC Launcher for admin launch
+        const launcherPath = resolveLauncherPath()
+        const safeLauncherPath = String(launcherPath).replace(/'/g, "''")
+        
+        ucLog(`Launching game (admin) via UC Launcher: ${launcherPath}`)
+        
+        const psScript = `try { $p = Start-Process -FilePath '${safeLauncherPath}' -Verb RunAs -WindowStyle Hidden -PassThru -ErrorAction Stop; if ($p) { Write-Output "STARTED:$($p.Id)"; exit 0 } else { Write-Error 'START-FAILED'; exit 1 } } catch { Write-Error $_.Exception.Message; exit 1 }`
 
-      // Verbose logging
-      const settings = readSettings() || {}
-      if (settings.verboseDownloadLogging) {
-        ucLog(`  Working directory (admin): ${workingDir}`, 'info')
-        ucLog(`  Executable (admin): ${exePath}`, 'info')
-      }
+        const proc = child_process.spawn('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-WindowStyle',
+          'Hidden',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          psScript
+        ], {
+          detached: false,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true
+        })
+        const result = await new Promise((resolve) => {
+          let done = false
+          let launchedPid = null
+          const finish = (payload) => {
+            if (done) return
+            done = true
+            resolve(payload)
+          }
 
-      // Launch via cmd.exe as admin so the wrapper PID can be tracked and quit can kill the whole tree.
-      const safeWorkingDir = String(workingDir).replace(/'/g, "''")
-      const safeExePath = String(exePath).replace(/'/g, "''")
-      const cmdLine = `set "PATH=${safeWorkingDir};%PATH%" && "${safeExePath}"`
+          const timer = setTimeout(() => {
+            finish({ ok: false, error: 'launch-timeout' })
+          }, 12000)
 
-      const psScript = `try { $p = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d','/s','/c', '${cmdLine}') -WorkingDirectory '${safeWorkingDir}' -Verb RunAs -WindowStyle Hidden -PassThru -ErrorAction Stop; if ($p) { Write-Output \"STARTED:$($p.Id)\"; exit 0 } else { Write-Error 'START-FAILED'; exit 1 } } catch { Write-Error $_.Exception.Message; exit 1 }`
-      const proc = child_process.spawn('powershell.exe', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-WindowStyle',
-        'Hidden',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        psScript
-      ], {
-        detached: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true
-      })
-      const result = await new Promise((resolve) => {
-        let done = false
-        let launchedPid = null
-        const finish = (payload) => {
-          if (done) return
-          done = true
-          resolve(payload)
+          proc.stdout?.on('data', (data) => {
+            const msg = String(data).trim()
+            if (msg) {
+              ucLog(`Game launch as admin stdout: ${appid} - ${msg}`)
+              const match = msg.match(/STARTED:(\d+)/)
+              if (match && match[1]) {
+                launchedPid = Number(match[1])
+                registerRunningGamePid(appid, exePath, launchedPid, gameName, showGameName)
+                clearTimeout(timer)
+                finish({ ok: true, pid: launchedPid })
+              }
+            }
+          })
+          proc.stderr?.on('data', (data) => {
+            const msg = String(data).trim()
+            if (msg) ucLog(`Game launch as admin stderr: ${appid} - ${msg}`, 'error')
+          })
+          proc.on('error', (err) => {
+            clearTimeout(timer)
+            ucLog(`Game launch as admin process error: ${appid} - ${err.message}`, 'error')
+            finish({ ok: false, error: err.message })
+          })
+          proc.on('exit', (code, signal) => {
+            ucLog(`Game launch as admin process exit: ${appid} - code=${code} signal=${signal}`, 'info')
+            if (!done) {
+              clearTimeout(timer)
+              finish({ ok: false, error: 'launch-exit' })
+            }
+          })
+        })
+
+        if (!result.ok) throw new Error(result.error || 'launch-failed')
+        ucLog(`Game launched as admin successfully via UC Launcher: ${appid}`)
+        return result
+      } else {
+        // Fall back to direct launch if config write fails
+        ucLog('Failed to write launcher config for admin launch, falling back to direct launch', 'warn')
+        const cwd = path.dirname(exePath)
+        
+        // Verbose logging
+        const settings = readSettings() || {}
+        if (settings.verboseDownloadLogging) {
+          ucLog(`  Working directory (admin): ${cwd}`, 'info')
+          ucLog(`  Executable (admin): ${exePath}`, 'info')
         }
 
-        const timer = setTimeout(() => {
-          finish({ ok: false, error: 'launch-timeout' })
-        }, 12000)
+        // Launch via cmd.exe as admin so the wrapper PID can be tracked and quit can kill the whole tree.
+        const safeWorkingDir = String(cwd).replace(/'/g, "''")
+        const safeExePath = String(exePath).replace(/'/g, "''")
+        const cmdLine = `set "PATH=${safeWorkingDir};%PATH%" && "${safeExePath}"`
+        
+        const psScript = `try { $p = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d','/s','/c', '${cmdLine}') -WorkingDirectory '${safeWorkingDir}' -Verb RunAs -WindowStyle Hidden -PassThru -ErrorAction Stop; if ($p) { Write-Output "STARTED:$($p.Id)"; exit 0 } else { Write-Error 'START-FAILED'; exit 1 } } catch { Write-Error $_.Exception.Message; exit 1 }`
 
-        proc.stdout?.on('data', (data) => {
-          const msg = String(data).trim()
-          if (msg) {
-            ucLog(`Game launch as admin stdout: ${appid} - ${msg}`)
-            const match = msg.match(/STARTED:(\d+)/)
-            if (match && match[1]) {
-              launchedPid = Number(match[1])
-              registerRunningGamePid(appid, exePath, launchedPid, gameName, showGameName)
-              clearTimeout(timer)
-              finish({ ok: true, pid: launchedPid })
+        const proc = child_process.spawn('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-WindowStyle',
+          'Hidden',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          psScript
+        ], {
+          detached: false,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true
+        })
+        const result = await new Promise((resolve) => {
+          let done = false
+          let launchedPid = null
+          const finish = (payload) => {
+            if (done) return
+            done = true
+            resolve(payload)
+          }
+
+          const timer = setTimeout(() => {
+            finish({ ok: false, error: 'launch-timeout' })
+          }, 12000)
+
+          proc.stdout?.on('data', (data) => {
+            const msg = String(data).trim()
+            if (msg) {
+              ucLog(`Game launch as admin stdout: ${appid} - ${msg}`)
+              const match = msg.match(/STARTED:(\d+)/)
+              if (match && match[1]) {
+                launchedPid = Number(match[1])
+                registerRunningGamePid(appid, exePath, launchedPid, gameName, showGameName)
+                clearTimeout(timer)
+                finish({ ok: true, pid: launchedPid })
+              }
             }
-          }
-        })
-        proc.stderr?.on('data', (data) => {
-          const msg = String(data).trim()
-          if (msg) ucLog(`Game launch as admin stderr: ${appid} - ${msg}`, 'error')
-        })
-        proc.on('error', (err) => {
-          clearTimeout(timer)
-          ucLog(`Game launch as admin process error: ${appid} - ${err.message}`, 'error')
-          finish({ ok: false, error: err.message })
-        })
-        proc.on('exit', (code, signal) => {
-          ucLog(`Game launch as admin process exit: ${appid} - code=${code} signal=${signal}`, 'info')
-          if (!done) {
+          })
+          proc.stderr?.on('data', (data) => {
+            const msg = String(data).trim()
+            if (msg) ucLog(`Game launch as admin stderr: ${appid} - ${msg}`, 'error')
+          })
+          proc.on('error', (err) => {
             clearTimeout(timer)
-            finish({ ok: false, error: 'launch-exit' })
-          }
+            ucLog(`Game launch as admin process error: ${appid} - ${err.message}`, 'error')
+            finish({ ok: false, error: err.message })
+          })
+          proc.on('exit', (code, signal) => {
+            ucLog(`Game launch as admin process exit: ${appid} - code=${code} signal=${signal}`, 'info')
+            if (!done) {
+              clearTimeout(timer)
+              finish({ ok: false, error: 'launch-exit' })
+            }
+          })
         })
-      })
 
-      if (!result.ok) throw new Error(result.error || 'launch-failed')
-      ucLog(`Game launched as admin successfully: ${appid}`)
-      return result
+        if (!result.ok) throw new Error(result.error || 'launch-failed')
+        ucLog(`Game launched as admin successfully: ${appid}`)
+        return result
+      }
     } catch (err) {
       ucLog(`Game launch as admin failed: ${appid} - ${err.message}`, 'error')
       // Fallback to regular launch
@@ -5881,3 +6062,4 @@ ipcMain.handle('uc:create-desktop-shortcut', async (_event, gameName, exePath) =
     return { ok: false, error: err.message }
   }
 })
+

@@ -6,6 +6,7 @@ import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useController } from "@/hooks/use-controller"
 
 interface ControllerDevice {
   index: number
@@ -62,9 +63,31 @@ const BUTTON_LABELS: Record<string, string> = {
 }
 
 export function ControllerSettingsPanel() {
-  const [controllers, setControllers] = useState<ControllerDevice[]>([])
+  // Use the controller hook to initialize polling and get controller data
+  const { controllers, settings, isLoading, error, setDeadzone, setControllerBinds, resetControllerBinds, rumble, startPolling, stopPolling, pollingActive } = useController()
+  
+  // State to track manual refresh
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  // Handle manual refresh
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    
+    // Stop and restart polling to force a re-scan
+    stopPolling()
+    
+    // Wait a brief moment
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
+    // Restart polling
+    startPolling()
+    setLastRefresh(new Date())
+    setIsRefreshing(false)
+  }, [startPolling, stopPolling])
+  
   const [selectedController, setSelectedController] = useState<number | null>(null)
-  const [deadzone, setDeadzone] = useState(0.15)
+  const [deadzone, setDeadzoneLocal] = useState(0.15)
   const [currentBinds, setCurrentBinds] = useState<Record<string, string>>(DEFAULT_BINDS)
   const [editingBind, setEditingBind] = useState<string | null>(null)
   const [pendingBind, setPendingBind] = useState<string | null>(null)
@@ -72,67 +95,20 @@ export function ControllerSettingsPanel() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  // Load controller list and settings
+  // Debug log when controllers change
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Get connected controllers from main process
-        if (window.ucController?.listControllers) {
-          const result = await window.ucController.listControllers()
-          if (result?.ok) {
-            setControllers(result.controllers || [])
-          }
-        }
+    console.log('[ControllerSettingsPanel] Controllers updated:', controllers)
+    console.log('[ControllerSettingsPanel] Settings:', settings)
+    console.log('[ControllerSettingsPanel] Is loading:', isLoading)
+    console.log('[ControllerSettingsPanel] Error:', error)
+  }, [controllers, settings, isLoading, error])
 
-        // Get saved settings
-        if (window.ucController?.getSettings) {
-          const result = await window.ucController.getSettings()
-          if (result?.ok) {
-            setDeadzone(result.deadzone ?? 0.15)
-          }
-        }
-      } catch (err) {
-        console.error("[Controller] Failed to load data:", err)
-      }
+  // Sync deadzone from settings
+  useEffect(() => {
+    if (settings?.deadzone !== undefined) {
+      setDeadzoneLocal(settings.deadzone)
     }
-
-    loadData()
-
-    // Set up event listeners for controller connections
-    const handleConnected = (data: { index: number; id: string; type: string; model: string; name: string }) => {
-      setControllers(prev => {
-        const exists = prev.find(c => c.index === data.index)
-        if (exists) return prev
-        return [...prev, { ...data, hasCustomBinds: false }]
-      })
-    }
-
-    const handleDisconnected = (data: { index: number }) => {
-      setControllers(prev => prev.filter(c => c.index !== data.index))
-      if (selectedController === data.index) {
-        setSelectedController(null)
-      }
-    }
-
-    const unsubConnect = window.ucController?.onConnected?.(handleConnected)
-    const unsubDisconnect = window.ucController?.onDisconnected?.(handleDisconnected)
-
-    // Poll for controller updates
-    const pollInterval = setInterval(async () => {
-      if (window.ucController?.listControllers) {
-        const result = await window.ucController.listControllers()
-        if (result?.ok) {
-          setControllers(result.controllers || [])
-        }
-      }
-    }, 2000)
-
-    return () => {
-      clearInterval(pollInterval)
-      unsubConnect?.()
-      unsubDisconnect?.()
-    }
-  }, [selectedController])
+  }, [settings?.deadzone])
 
   // Load binds when controller is selected
   useEffect(() => {
@@ -242,9 +218,14 @@ export function ControllerSettingsPanel() {
         <div className="flex items-center gap-3">
           <Gamepad className="h-5 w-5 text-primary" />
           <CardTitle className="text-lg">Controller</CardTitle>
-          <Badge variant={controllers.length > 0 ? "default" : "secondary"} className="ml-auto">
-            {controllers.length} {controllers.length === 1 ? 'controller' : 'controllers'} connected
-          </Badge>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {pollingActive ? 'Polling active' : 'Polling inactive'}
+            </span>
+            <Badge variant={controllers.length > 0 ? "default" : "secondary"}>
+              {controllers.length} {controllers.length === 1 ? 'controller' : 'controllers'} connected
+            </Badge>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground mt-1">
           Configure controller settings, deadzone, and button mappings. Works with Xbox, PlayStation, Nintendo, and generic controllers.
@@ -253,10 +234,22 @@ export function ControllerSettingsPanel() {
       <CardContent className="space-y-6">
         {/* Connected Controllers */}
         <div className="space-y-3">
-          <label className="text-sm font-medium">Connected Controllers</label>
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">Connected Controllers</label>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+            >
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </div>
           {controllers.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border/60 p-4 text-center text-sm text-muted-foreground">
-              No controllers detected. Connect a controller and press any button to detect it.
+              <p className="font-medium mb-2">No controllers detected</p>
+              <p>Connect your controller and <span className="text-primary font-medium">press any button</span> on it to activate it.</p>
+              <p className="text-xs mt-2">The browser requires a button press before controllers can be detected.</p>
             </div>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">

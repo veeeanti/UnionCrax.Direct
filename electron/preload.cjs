@@ -1,5 +1,15 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+// Debug: Log when preload is running
+console.log('[Preload] UnionCrax.Direct preload script loading...')
+
+// Verify ipcRenderer is available
+if (!ipcRenderer) {
+  console.error('[Preload] ERROR: ipcRenderer not available')
+} else {
+  console.log('[Preload] ipcRenderer available')
+}
+
 contextBridge.exposeInMainWorld('ucDownloads', {
   start: (payload) => ipcRenderer.invoke('uc:download-start', payload),
   cancel: (downloadId) => ipcRenderer.invoke('uc:download-cancel', downloadId),
@@ -153,7 +163,20 @@ contextBridge.exposeInMainWorld('ucOverlay', {
 })
 
 // Controller API (SDL2/XInput/DInput support via Gamepad API)
+// The Gamepad API is only available in the renderer process, so we poll it there
+// and send the data to the main process for state management
+console.log('[Preload] Exposing ucController API...')
 contextBridge.exposeInMainWorld('ucController', {
+  // Send gamepad data from renderer to main process (where Gamepad API doesn't exist)
+  sendGamepadData: (gamepads) => ipcRenderer.send('uc:controller-gamepad-data', gamepads),
+
+  // Listen for rumble commands from main process
+  onRumble: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('uc:controller-rumble', listener)
+    return () => ipcRenderer.removeListener('uc:controller-rumble', listener)
+  },
+
   // Get list of connected controllers
   listControllers: () => ipcRenderer.invoke('uc:controller-list'),
   

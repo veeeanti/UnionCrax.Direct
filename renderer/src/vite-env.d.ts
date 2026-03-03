@@ -233,6 +233,17 @@ declare global {
       onStateChanged: (callback: (data: { visible: boolean; appid: string | null }) => void) => () => void
     }
     ucController?: {
+      // Send gamepad data from renderer to main process (where Gamepad API doesn't exist)
+      sendGamepadData: (gamepads: any[]) => void
+      
+      // Listen for rumble commands from main process
+      onRumble: (callback: (data: {
+        index: number
+        weakMagnitude: number
+        strongMagnitude: number
+        duration: number
+      }) => void) => () => void
+
       // Get list of connected controllers
       listControllers: () => Promise<{
         ok: boolean
